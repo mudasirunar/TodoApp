@@ -138,7 +138,6 @@ fun SwipeTutorialDialog(onDismiss: () -> Unit) {
                                 .padding(horizontal = 4.dp)
                                 .clip(CircleShape)
                                 .background(dotColor)
-                                // We keep height at 8dp but let width expand significantly
                                 .size(width = dotWidth.coerceAtLeast(10.dp), height = 8.dp)
                         )
                     }
