@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -11,6 +13,15 @@ android {
         version = release(36)
     }
 
+    val localProps = Properties()
+    val localFile = rootProject.file("local.properties")
+
+    if (localFile.exists()) {
+        localProps.load(localFile.inputStream())
+    }
+
+    val apiKey = localProps.getProperty("GROQ_API_KEY", "")
+
     defaultConfig {
         applicationId = "com.example.mytodoapp"
         minSdk = 24
@@ -19,6 +30,8 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField("String", "GROQ_API_KEY", "\"$apiKey\"")
     }
 
     buildTypes {
@@ -39,6 +52,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -78,4 +92,8 @@ dependencies {
     ksp("androidx.room:room-compiler:$room_version")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
 
+    // Retrofit & AI
+    implementation(libs.retrofit)
+    implementation(libs.retrofit.converter.gson)
+    implementation(libs.okhttp.logging)
 }
