@@ -6,6 +6,7 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
@@ -80,6 +81,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -96,6 +98,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -115,6 +118,7 @@ import com.example.mytodoapp.data.TodoGroup
 import com.example.mytodoapp.data.TodoStatus
 import com.example.mytodoapp.data.TodoTask
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 // ✅ OPTIMIZATION 1: Lightweight Custom Saver (replaces Gson - 80% faster)
 private val todoListSaver = listSaver<List<TodoTask>, Map<String, Any>>(
@@ -151,6 +155,7 @@ fun AddTodoScreen(
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val haptic = LocalHapticFeedback.current
+    val view = LocalView.current
     val titleFocusRequester = remember { FocusRequester() }
     var showTutorial by remember { mutableStateOf(false) }
     val scrollState = rememberLazyListState()
@@ -244,6 +249,15 @@ fun AddTodoScreen(
 
     var newTaskToFocusId by remember { mutableStateOf<String?>(null) }
     var previousTasksSize by remember { mutableStateOf(tasks.size) }
+    var shakingTaskId by remember { mutableStateOf<Pair<String, Long>?>(null) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(shakingTaskId) {
+        if (shakingTaskId != null) {
+            delay(600) 
+            shakingTaskId = null
+        }
+    }
 
     LaunchedEffect(tasks.size) {
         if (tasks.size > previousTasksSize) {
@@ -307,7 +321,7 @@ fun AddTodoScreen(
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("Edit Task List", fontWeight = FontWeight.Bold) },
+                title = { Text(if (title.isBlank()) "Untitled" else title, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = { onNavigateBack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, null)
@@ -473,6 +487,7 @@ fun AddTodoScreen(
                         highlightQuery = highlightQuery,
                         isHighlightActive = isHighlightVisible,
                         bounceOffset = bounceOffset,
+                        isShaking = shakingTaskId?.first == task.id,
                         modifier = Modifier.animateItem(),
                         focusRequester = currentRequester,
                         onUpdate = { updatedTask ->
@@ -480,9 +495,23 @@ fun AddTodoScreen(
                         },
                         onDelete = {
                             if (tasks.size > 1) {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 val idToRemove = task.id
                                 tasks = tasks.filter { it.id != idToRemove }
                                 focusMap.remove(idToRemove)
+                            } else {
+                                // ✅ TRIGGER INTENSE SHAKE & VIBEY HAPTICS
+                                shakingTaskId = task.id to System.currentTimeMillis()
+                                scope.launch {
+                                    repeat(8) {
+                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                            view.performHapticFeedback(android.view.HapticFeedbackConstants.REJECT)
+                                        } else {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        }
+                                        delay(50) 
+                                    }
+                                }
                             }
                         },
                         onMoveToTop = {
@@ -622,6 +651,7 @@ fun TaskEditRow(
     highlightQuery: String,
     isHighlightActive: Boolean,
     bounceOffset: Float,
+    isShaking: Boolean = false,
     modifier: Modifier = Modifier,
     focusRequester: FocusRequester,
     onUpdate: (TodoTask) -> Unit,
@@ -636,6 +666,27 @@ fun TaskEditRow(
     // ✅ OPTIMIZATION 11: Use remember to cache match calculation
     val isMatch = remember(task.text, highlightQuery, isHighlightActive) {
         isHighlightActive && highlightQuery.isNotEmpty() && task.text.contains(highlightQuery, ignoreCase = true)
+    }
+
+    // ✅ SHAKE ANIMATION LOGIC
+    val shakeAnim = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(isShaking) {
+        if (isShaking) {
+            repeat(5) {
+                shakeAnim.animateTo(
+                    targetValue = 16f,
+                    animationSpec = tween(durationMillis = 50, easing = LinearEasing)
+                )
+                shakeAnim.animateTo(
+                    targetValue = -16f,
+                    animationSpec = tween(durationMillis = 50, easing = LinearEasing)
+                )
+            }
+            shakeAnim.animateTo(
+                targetValue = 0f,
+                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow)
+            )
+        }
     }
 
     LaunchedEffect(currentValue) {
@@ -717,7 +768,10 @@ fun TaskEditRow(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 4.dp),
+                .padding(vertical = 4.dp)
+                .graphicsLayer {
+                    translationX = if (isShaking) shakeAnim.value else 0f
+                },
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             border = BorderStroke(
@@ -793,10 +847,7 @@ fun TaskEditRow(
                     }
 
                     IconButton(
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onDelete()
-                        },
+                        onClick = onDelete,
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(

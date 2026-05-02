@@ -87,7 +87,7 @@ class MainActivity : ComponentActivity() {
                         ) { backStack ->
                             val id = backStack.arguments?.getString("groupId") ?: ""
                             val query = backStack.arguments?.getString("query") ?: "" // Extract query
-                            val existing = groups.find { it.id == id } ?: TodoGroup(id = id)
+                            val existing = groups?.find { it.id == id } ?: TodoGroup(id = id)
 
                             AddTodoScreen(
                                 existingGroup = existing,

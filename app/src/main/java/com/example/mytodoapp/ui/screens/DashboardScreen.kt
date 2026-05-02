@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -87,7 +88,7 @@ import com.example.mytodoapp.data.TodoStatus
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
-    groups: List<TodoGroup>,
+    groups: List<TodoGroup>?,
     onNavigateToEdit: (TodoGroup, String) -> Unit,
     onDeleteGroup: (TodoGroup) -> Unit,
     onTogglePin: (TodoGroup) -> Unit
@@ -98,11 +99,11 @@ fun DashboardScreen(
     val scrollState = rememberLazyListState()
 
     // Inside DashboardScreen
-    remember(groups) {
-        groups.sortedWith(
+    val sortedGroups = remember(groups) {
+        groups?.sortedWith(
             compareByDescending<TodoGroup> { it.isPinned }
                 .thenByDescending { it.createdAt }
-        )
+        ) ?: emptyList()
     }
 
     val focusRequester = remember { FocusRequester() }
@@ -112,18 +113,13 @@ fun DashboardScreen(
     var searchQuery by remember { mutableStateOf("") }
 
     // 1. Updated Filtering Logic
-    val filteredGroups = remember(groups, searchQuery) {
+    val filteredGroups = remember(sortedGroups, searchQuery) {
         val trimmedQuery = searchQuery.trim() // Handle accidental spaces
 
-        val sorted = groups.sortedWith(
-            compareByDescending<TodoGroup> { it.isPinned }
-                .thenByDescending { it.createdAt }
-        )
-
         if (trimmedQuery.isEmpty()) {
-            sorted
+            sortedGroups
         } else {
-            sorted.filter { group ->
+            sortedGroups.filter { group ->
                 val displayTitle = group.title.ifBlank { "Untitled" }
 
                 displayTitle.contains(trimmedQuery, ignoreCase = true) ||
@@ -261,7 +257,16 @@ fun DashboardScreen(
             )
         }
 
-        if (groups.isEmpty()) {
+        if (groups == null) {
+            Box(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        } else if (groups.isEmpty()) {
             Column(
                 modifier = Modifier.fillMaxSize().padding(padding),
                 horizontalAlignment = Alignment.CenterHorizontally,

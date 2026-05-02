@@ -17,7 +17,7 @@ import kotlinx.coroutines.launch
 class TodoViewModel(private val todoDao: TodoDao) : ViewModel() {
 
     // StateFlow holding the list of TodoGroups
-    val groups: StateFlow<List<TodoGroup>> = todoDao.getAllGroups()
+    val groups: StateFlow<List<TodoGroup>?> = todoDao.getAllGroups()
         .map { entities ->
             entities.map { entity ->
                 TodoGroup(
@@ -32,7 +32,7 @@ class TodoViewModel(private val todoDao: TodoDao) : ViewModel() {
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
-            initialValue = emptyList()
+            initialValue = null
         )
 
     fun insertGroup(group: TodoGroup) {
