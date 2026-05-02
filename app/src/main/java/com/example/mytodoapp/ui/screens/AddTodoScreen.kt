@@ -6,6 +6,7 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
@@ -17,9 +18,11 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,6 +46,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -55,6 +60,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -88,8 +94,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -109,14 +118,20 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.Popup
 import com.example.mytodoapp.utils.PdfHelper
 import com.example.mytodoapp.utils.SwipeTutorialDialog
 import com.example.mytodoapp.data.TodoGroup
 import com.example.mytodoapp.data.TodoStatus
 import com.example.mytodoapp.data.TodoTask
+import com.example.mytodoapp.utils.AiHelper
+import com.example.mytodoapp.utils.AiRewriteOptionsDialog
+import com.example.mytodoapp.utils.RewriteType
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -216,6 +231,19 @@ fun AddTodoScreen(
         }
     }
     var showBackDialog by rememberSaveable { mutableStateOf(false) }
+
+    // AI Rewrite States
+    val aiJobs = remember { mutableStateMapOf<String, Job>() }
+    val aiLoadingStates = remember { mutableStateMapOf<String, Boolean>() }
+    val aiErrors = remember { mutableStateMapOf<String, String>() }
+    val aiRewriteTypes = remember { mutableStateMapOf<String, RewriteType>() }
+    var taskForAiDialog by remember { mutableStateOf<String?>(null) }
+
+    val cancelAiJob = { taskId: String ->
+        aiJobs[taskId]?.cancel()
+        aiJobs.remove(taskId)
+        aiLoadingStates[taskId] = false
+    }
 
     // ✅ OPTIMIZATION 5: Initialize all focus requesters once
     val focusMap = remember {
@@ -488,6 +516,9 @@ fun AddTodoScreen(
                         isHighlightActive = isHighlightVisible,
                         bounceOffset = bounceOffset,
                         isShaking = shakingTaskId?.first == task.id,
+                        isLoading = aiLoadingStates[task.id] ?: false,
+                        error = aiErrors[task.id],
+                        rewriteType = aiRewriteTypes[task.id] ?: RewriteType.Standard,
                         modifier = Modifier.animateItem(),
                         focusRequester = currentRequester,
                         onUpdate = { updatedTask ->
@@ -497,6 +528,7 @@ fun AddTodoScreen(
                             if (tasks.size > 1) {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 val idToRemove = task.id
+                                cancelAiJob(idToRemove) // Stop AI process
                                 tasks = tasks.filter { it.id != idToRemove }
                                 focusMap.remove(idToRemove)
                             } else {
@@ -534,6 +566,33 @@ fun AddTodoScreen(
                                 focusMap[newTask.id] = FocusRequester()
                                 newTaskToFocusId = newTask.id
                             }
+                        },
+                        onAiRewrite = { taskId, type ->
+                            aiLoadingStates[taskId] = true
+                            aiErrors.remove(taskId)
+                            
+                            aiJobs[taskId] = scope.launch {
+                                try {
+                                    val result = AiHelper.rewriteText(task.text, type.mode)
+                                    
+                                    if (result.startsWith("Error:")) {
+                                        aiErrors[taskId] = result.removePrefix("Error:").trim()
+                                    } else {
+                                        tasks = tasks.map { if (it.id == taskId) it.copy(text = result) else it }
+                                    }
+                                } catch (e: Exception) {
+                                    aiErrors[taskId] = "Unexpected error"
+                                } finally {
+                                    aiLoadingStates[taskId] = false
+                                    aiJobs.remove(taskId)
+                                }
+                            }
+                        },
+                        onAiLongClick = { taskId ->
+                            taskForAiDialog = taskId
+                        },
+                        onClearError = { taskId ->
+                            aiErrors.remove(taskId)
                         }
                     )
 
@@ -571,6 +630,21 @@ fun AddTodoScreen(
                 }
             }
         }
+    }
+
+    // AI Rewrite Dialog
+    taskForAiDialog?.let { taskId ->
+        AiRewriteOptionsDialog(
+            currentType = aiRewriteTypes[taskId] ?: RewriteType.Standard,
+            onTypeSelected = { type ->
+                aiRewriteTypes[taskId] = type
+                taskForAiDialog = null
+                // Optional: Trigger rewrite immediately after selection? 
+                // The prompt says "user can select... by default it be set on default", 
+                // so I'll just save it.
+            },
+            onDismiss = { taskForAiDialog = null }
+        )
     }
 }
 
@@ -644,7 +718,7 @@ fun areTasksEqual(tasks1: List<TodoTask>, tasks2: List<TodoTask>): Boolean {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun TaskEditRow(
     task: TodoTask,
@@ -652,20 +726,43 @@ fun TaskEditRow(
     isHighlightActive: Boolean,
     bounceOffset: Float,
     isShaking: Boolean = false,
+    isLoading: Boolean = false,
+    error: String? = null,
+    rewriteType: RewriteType = RewriteType.Standard,
     modifier: Modifier = Modifier,
     focusRequester: FocusRequester,
     onUpdate: (TodoTask) -> Unit,
     onDelete: () -> Unit,
     onMoveToTop: () -> Unit,
-    onImeAction: () -> Unit
+    onImeAction: () -> Unit,
+    onAiRewrite: (String, RewriteType) -> Unit,
+    onAiLongClick: (String) -> Unit,
+    onClearError: (String) -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
     val dismissState = rememberSwipeToDismissBoxState()
     val currentValue = dismissState.currentValue
 
     // ✅ OPTIMIZATION 11: Use remember to cache match calculation
     val isMatch = remember(task.text, highlightQuery, isHighlightActive) {
         isHighlightActive && highlightQuery.isNotEmpty() && task.text.contains(highlightQuery, ignoreCase = true)
+    }
+
+    // Word/Character count check (>= 7 letters)
+    val isAiEnabled = remember(task.text) {
+        task.text.trim().length >= 7
+    }
+
+    // Error Tooltip state
+    var showTooltip by remember { mutableStateOf(false) }
+    LaunchedEffect(error) {
+        if (error != null) {
+            showTooltip = true
+            delay(4000)
+            showTooltip = false
+            onClearError(task.id)
+        }
     }
 
     // ✅ SHAKE ANIMATION LOGIC
@@ -791,38 +888,125 @@ fun TaskEditRow(
                     Icon(Icons.Default.Star, null, tint = Color(0xFFFFD700), modifier = Modifier.size(18.dp).padding(end = 4.dp))
                 }
 
-                TextField(
-                    value = task.text,
-                    onValueChange = { onUpdate(task.copy(text = it)) },
+                // AI ICON or LOADER (Switches automatically)
+                Box(
+                    contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .weight(1f)
-                        .focusRequester(focusRequester)
-                        .graphicsLayer {
-                            translationY = if (isMatch && isHighlightActive) bounceOffset else 0f
-                        },
-                    visualTransformation = if (isHighlightActive)
-                        SearchHighlightTransformation(highlightQuery, Color(0xFFFFEB3B))
-                    else VisualTransformation.None,
-                    keyboardOptions = KeyboardOptions(
-                        capitalization = KeyboardCapitalization.Sentences,
-                        imeAction = ImeAction.Next
-                    ),
-                    keyboardActions = KeyboardActions(onNext = { onImeAction() }),
-                    placeholder = {
-                        Text(
-                            "What needs to be done?",
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                        .size(36.dp)
+                        .padding(start = 4.dp)
+                ) {
+                    if (isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(22.dp),
+                            strokeWidth = 2.5.dp,
+                            color = MaterialTheme.colorScheme.primary
                         )
-                    },
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent
-                    ),
-                    singleLine = false,
-                    maxLines = 5
-                )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = "AI Rewrite",
+                            tint = if (isAiEnabled) Color.White else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                            modifier = Modifier
+                                .size(26.dp)
+                                .graphicsLayer(alpha = 0.99f)
+                                .drawWithCache {
+                                    onDrawWithContent {
+                                        drawContent()
+                                        if (isAiEnabled) {
+                                            drawRect(
+                                                brush = Brush.linearGradient(
+                                                    colors = listOf(
+                                                        Color(0xFF4285F4),
+                                                        Color(0xFF9B72CB),
+                                                        Color(0xFFD96570)
+                                                    ),
+                                                    start = Offset.Zero,
+                                                    end = Offset(size.width, size.height)
+                                                ),
+                                                blendMode = BlendMode.SrcIn
+                                            )
+                                        }
+                                    }
+                                }
+                                .combinedClickable(
+                                    enabled = isAiEnabled && !isLoading,
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        onAiRewrite(task.id, rewriteType)
+                                    },
+                                    onLongClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        onAiLongClick(task.id)
+                                    }
+                                )
+                        )
+                    }
+
+                    // Error Tooltip
+                    if (showTooltip && error != null) {
+                        Popup(
+                            alignment = Alignment.TopCenter,
+                            offset = androidx.compose.ui.unit.IntOffset(0, -120)
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.secondaryContainer,
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+                                shadowElevation = 8.dp
+                            ) {
+                                Text(
+                                    text = error,
+                                    modifier = Modifier.padding(8.dp),
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    TextField(
+                        value = task.text,
+                        onValueChange = { onUpdate(task.copy(text = it)) },
+                        readOnly = isLoading,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(focusRequester)
+                            .graphicsLayer {
+                                translationY = if (isMatch && isHighlightActive) bounceOffset else 0f
+                                alpha = if (isLoading) 0.5f else 1f
+                            },
+                        visualTransformation = if (isHighlightActive)
+                            SearchHighlightTransformation(highlightQuery, Color(0xFFFFEB3B))
+                        else VisualTransformation.None,
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Sentences,
+                            imeAction = ImeAction.Next
+                        ),
+                        keyboardActions = KeyboardActions(onNext = { onImeAction() }),
+                        placeholder = {
+                            Text(
+                                "What needs to be done?",
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                            )
+                        },
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                            disabledContainerColor = Color.Transparent,
+                            disabledIndicatorColor = Color.Transparent,
+                            disabledTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                        ),
+                        singleLine = false,
+                        maxLines = 5
+                    )
+                }
 
                 StatusSelector(
                     currentStatus = task.status,
@@ -980,3 +1164,4 @@ class SearchHighlightTransformation(private val query: String, private val highl
         )
     }
 }
+
