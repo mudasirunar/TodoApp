@@ -50,10 +50,13 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Redo
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarOutline
+import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -97,6 +100,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
@@ -131,6 +135,7 @@ import com.example.mytodoapp.data.TodoTask
 import com.example.mytodoapp.utils.AiHelper
 import com.example.mytodoapp.utils.AiRewriteOptionsDialog
 import com.example.mytodoapp.utils.RewriteType
+import com.example.mytodoapp.ui.viewmodel.TodoViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -164,6 +169,7 @@ private val todoListSaver = listSaver<List<TodoTask>, Map<String, Any>>(
 fun AddTodoScreen(
     existingGroup: TodoGroup,
     highlightQuery: String = "",
+    viewModel: TodoViewModel,
     onSave: (TodoGroup) -> Unit,
     onBack: () -> Unit
 ) {
@@ -519,8 +525,22 @@ fun AddTodoScreen(
                         isLoading = aiLoadingStates[task.id] ?: false,
                         error = aiErrors[task.id],
                         rewriteType = aiRewriteTypes[task.id] ?: RewriteType.Standard,
+                        canUndo = viewModel.canUndoMap[task.id] == true,
+                        canRedo = viewModel.canRedoMap[task.id] == true,
                         modifier = Modifier.animateItem(),
                         focusRequester = currentRequester,
+                        onInitHistory = { text -> viewModel.initHistoryIfNeeds(task.id, text) },
+                        onPushHistory = { text -> viewModel.pushHistory(task.id, text) },
+                        onUndo = {
+                            viewModel.undo(task.id)?.let { undoneText ->
+                                tasks = tasks.map { if (it.id == task.id) it.copy(text = undoneText) else it }
+                            }
+                        },
+                        onRedo = {
+                            viewModel.redo(task.id)?.let { redoneText ->
+                                tasks = tasks.map { if (it.id == task.id) it.copy(text = redoneText) else it }
+                            }
+                        },
                         onUpdate = { updatedTask ->
                             tasks = tasks.map { if (it.id == updatedTask.id) updatedTask else it }
                         },
@@ -553,7 +573,17 @@ fun AddTodoScreen(
                                 val item = mutableTasks.removeAt(currentIndex)
                                 mutableTasks.add(0, item)
                                 tasks = mutableTasks.toList()
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            }
+                        },
+                        onMoveToBottom = {
+                            val currentIndex = tasks.indexOfFirst { it.id == task.id }
+                            if (currentIndex < tasks.size - 1) {
+                                val mutableTasks = tasks.toMutableList()
+                                val item = mutableTasks.removeAt(currentIndex)
+                                mutableTasks.add(item)
+                                tasks = mutableTasks.toList()
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             }
                         },
                         onImeAction = {
@@ -578,6 +608,7 @@ fun AddTodoScreen(
                                     if (result.startsWith("Error:")) {
                                         aiErrors[taskId] = result.removePrefix("Error:").trim()
                                     } else {
+                                        viewModel.pushHistory(taskId, result)
                                         tasks = tasks.map { if (it.id == taskId) it.copy(text = result) else it }
                                     }
                                 } catch (e: Exception) {
@@ -729,11 +760,18 @@ fun TaskEditRow(
     isLoading: Boolean = false,
     error: String? = null,
     rewriteType: RewriteType = RewriteType.Standard,
+    canUndo: Boolean = false,
+    canRedo: Boolean = false,
     modifier: Modifier = Modifier,
     focusRequester: FocusRequester,
+    onInitHistory: (String) -> Unit,
+    onPushHistory: (String) -> Unit,
+    onUndo: () -> Unit,
+    onRedo: () -> Unit,
     onUpdate: (TodoTask) -> Unit,
     onDelete: () -> Unit,
     onMoveToTop: () -> Unit,
+    onMoveToBottom: () -> Unit,
     onImeAction: () -> Unit,
     onAiRewrite: (String, RewriteType) -> Unit,
     onAiLongClick: (String) -> Unit,
@@ -762,6 +800,19 @@ fun TaskEditRow(
             delay(4000)
             showTooltip = false
             onClearError(task.id)
+        }
+    }
+
+    var isFocused by remember { mutableStateOf(false) }
+
+    LaunchedEffect(task.id) {
+        onInitHistory(task.text)
+    }
+
+    LaunchedEffect(task.text) {
+        if (isFocused) {
+            delay(1000)
+            onPushHistory(task.text)
         }
     }
 
@@ -880,166 +931,240 @@ fun TaskEditRow(
                 defaultElevation = if (isMatch) 12.dp else if (task.isFavorite) 6.dp else 2.dp
             )
         ) {
-            Row(
-                modifier = Modifier.padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                modifier = Modifier.padding(12.dp)
             ) {
-                if (task.isFavorite) {
-                    Icon(Icons.Default.Star, null, tint = Color(0xFFFFD700), modifier = Modifier.size(18.dp).padding(end = 4.dp))
-                }
-
-                // AI ICON or LOADER (Switches automatically)
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .padding(start = 4.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (isLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(22.dp),
-                            strokeWidth = 2.5.dp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = "AI Rewrite",
-                            tint = if (isAiEnabled) Color.White else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
-                            modifier = Modifier
-                                .size(26.dp)
-                                .graphicsLayer(alpha = 0.99f)
-                                .drawWithCache {
-                                    onDrawWithContent {
-                                        drawContent()
-                                        if (isAiEnabled) {
-                                            drawRect(
-                                                brush = Brush.linearGradient(
-                                                    colors = listOf(
-                                                        Color(0xFF4285F4),
-                                                        Color(0xFF9B72CB),
-                                                        Color(0xFFD96570)
-                                                    ),
-                                                    start = Offset.Zero,
-                                                    end = Offset(size.width, size.height)
-                                                ),
-                                                blendMode = BlendMode.SrcIn
-                                            )
-                                        }
-                                    }
-                                }
-                                .combinedClickable(
-                                    enabled = isAiEnabled && !isLoading,
-                                    onClick = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        onAiRewrite(task.id, rewriteType)
-                                    },
-                                    onLongClick = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        onAiLongClick(task.id)
-                                    }
-                                )
-                        )
+                    if (task.isFavorite) {
+                        Icon(Icons.Default.Star, null, tint = Color(0xFFFFD700), modifier = Modifier.size(24.dp).padding(end = 4.dp))
                     }
 
-                    // Error Tooltip
-                    if (showTooltip && error != null) {
-                        Popup(
-                            alignment = Alignment.TopCenter,
-                            offset = androidx.compose.ui.unit.IntOffset(0, -120)
-                        ) {
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.secondaryContainer,
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-                                shadowElevation = 8.dp
-                            ) {
+                    Box(
+                        modifier = Modifier.weight(1f),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        TextField(
+                            value = task.text,
+                            onValueChange = { onUpdate(task.copy(text = it)) },
+                            readOnly = isLoading,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(focusRequester)
+                                .onFocusChanged { state ->
+                                    isFocused = state.isFocused
+                                    if (!state.isFocused) {
+                                        onPushHistory(task.text)
+                                    }
+                                }
+                                .graphicsLayer {
+                                    translationY = if (isMatch && isHighlightActive) bounceOffset else 0f
+                                    alpha = if (isLoading) 0.5f else 1f
+                                },
+                            visualTransformation = if (isHighlightActive)
+                                SearchHighlightTransformation(highlightQuery, Color(0xFFFFEB3B))
+                            else VisualTransformation.None,
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Sentences,
+                                imeAction = ImeAction.Next
+                            ),
+                            keyboardActions = KeyboardActions(onNext = { onImeAction() }),
+                            placeholder = {
                                 Text(
-                                    text = error,
-                                    modifier = Modifier.padding(8.dp),
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                    "What needs to be done?",
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                                 )
+                            },
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                disabledContainerColor = Color.Transparent,
+                                disabledIndicatorColor = Color.Transparent,
+                                disabledTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                            ),
+                            singleLine = false,
+                            maxLines = 5
+                        )
+                    }
+                }
+
+                androidx.compose.material3.HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // AI ICON or LOADER (Switches automatically)
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        if (isLoading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.5.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = "AI Rewrite",
+                                tint = if (isAiEnabled) Color.White else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .graphicsLayer(alpha = 0.99f)
+                                    .drawWithCache {
+                                        onDrawWithContent {
+                                            drawContent()
+                                            if (isAiEnabled) {
+                                                drawRect(
+                                                    brush = Brush.linearGradient(
+                                                        colors = listOf(
+                                                            Color(0xFF4285F4),
+                                                            Color(0xFF9B72CB),
+                                                            Color(0xFFD96570)
+                                                        ),
+                                                        start = Offset.Zero,
+                                                        end = Offset(size.width, size.height)
+                                                    ),
+                                                    blendMode = BlendMode.SrcIn
+                                                )
+                                            }
+                                        }
+                                    }
+                                    .combinedClickable(
+                                        enabled = isAiEnabled && !isLoading,
+                                        onClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            onAiRewrite(task.id, rewriteType)
+                                        },
+                                        onLongClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            onAiLongClick(task.id)
+                                        }
+                                    )
+                            )
+                        }
+
+                        // Error Tooltip
+                        if (showTooltip && error != null) {
+                            Popup(
+                                alignment = Alignment.TopCenter,
+                                offset = androidx.compose.ui.unit.IntOffset(0, -120)
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = MaterialTheme.colorScheme.secondaryContainer,
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+                                    shadowElevation = 8.dp
+                                ) {
+                                    Text(
+                                        text = error,
+                                        modifier = Modifier.padding(8.dp),
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
+                                }
                             }
                         }
                     }
-                }
-
-                Box(
-                    modifier = Modifier.weight(1f),
-                    contentAlignment = Alignment.CenterStart
-                ) {
-                    TextField(
-                        value = task.text,
-                        onValueChange = { onUpdate(task.copy(text = it)) },
-                        readOnly = isLoading,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .focusRequester(focusRequester)
-                            .graphicsLayer {
-                                translationY = if (isMatch && isHighlightActive) bounceOffset else 0f
-                                alpha = if (isLoading) 0.5f else 1f
-                            },
-                        visualTransformation = if (isHighlightActive)
-                            SearchHighlightTransformation(highlightQuery, Color(0xFFFFEB3B))
-                        else VisualTransformation.None,
-                        keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.Sentences,
-                            imeAction = ImeAction.Next
-                        ),
-                        keyboardActions = KeyboardActions(onNext = { onImeAction() }),
-                        placeholder = {
-                            Text(
-                                "What needs to be done?",
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                            )
-                        },
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent,
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent,
-                            disabledContainerColor = Color.Transparent,
-                            disabledIndicatorColor = Color.Transparent,
-                            disabledTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                        ),
-                        singleLine = false,
-                        maxLines = 5
-                    )
-                }
-
-                StatusSelector(
-                    currentStatus = task.status,
-                    onStatusChange = { newStatus -> onUpdate(task.copy(status = newStatus)) }
-                )
-
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                    modifier = Modifier.padding(start = 8.dp)
-                ) {
+                    
                     IconButton(
-                        onClick = onMoveToTop,
-                        modifier = Modifier.size(32.dp)
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onUndo()
+                        },
+                        enabled = canUndo,
+                        modifier = Modifier.size(40.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.KeyboardArrowUp,
-                            contentDescription = "Move to top",
-                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                            imageVector = Icons.Default.Undo,
+                            contentDescription = "Undo",
+                            tint = if (canUndo) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
                             modifier = Modifier.size(24.dp)
                         )
                     }
 
                     IconButton(
-                        onClick = onDelete,
-                        modifier = Modifier.size(32.dp)
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onRedo()
+                        },
+                        enabled = canRedo,
+                        modifier = Modifier.size(40.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Delete",
-                            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
-                            modifier = Modifier.size(20.dp)
+                            imageVector = Icons.Default.Redo,
+                            contentDescription = "Redo",
+                            tint = if (canRedo) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
+                            modifier = Modifier.size(24.dp)
                         )
+                    }
+
+                    Box(
+                        modifier = Modifier.weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("|", fontSize = 28.sp, fontWeight = FontWeight.Light, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f), modifier = Modifier.padding(bottom = 4.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            
+                            StatusSelector(
+                                currentStatus = task.status,
+                                onStatusChange = { newStatus -> onUpdate(task.copy(status = newStatus)) }
+                            )
+
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("|", fontSize = 28.sp, fontWeight = FontWeight.Light, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f), modifier = Modifier.padding(bottom = 4.dp))
+                        }
+                    }
+
+                    Row(
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            onClick = onMoveToTop,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowUp,
+                                contentDescription = "Move to top",
+                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+
+                        IconButton(
+                            onClick = onMoveToBottom,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowDown,
+                                contentDescription = "Move to bottom",
+                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+
+                        IconButton(
+                            onClick = onDelete,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Delete",
+                                tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -1065,7 +1190,7 @@ fun StatusSelector(
             TodoStatus.entries.forEach { status ->
                 val isSelected = currentStatus == status
                 val dotSize by animateDpAsState(
-                    targetValue = if (isSelected) 30.dp else 24.dp,
+                    targetValue = if (isSelected) 28.dp else 22.dp,
                     animationSpec = spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessLow),
                     label = "pop"
                 )
@@ -1164,4 +1289,5 @@ class SearchHighlightTransformation(private val query: String, private val highl
         )
     }
 }
+
 

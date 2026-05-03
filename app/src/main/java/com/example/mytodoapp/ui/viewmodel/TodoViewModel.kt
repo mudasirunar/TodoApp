@@ -1,6 +1,7 @@
 
 package com.example.mytodoapp.ui.viewmodel
 
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -13,6 +14,44 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+class RowHistory(initialText: String) {
+    private val maxHistory = 30
+    val undoStack = ArrayDeque<String>()
+    val redoStack = ArrayDeque<String>()
+    var currentText: String = initialText
+
+    fun pushState(newText: String) {
+        if (newText == currentText) return
+
+        if (currentText.isBlank() && undoStack.isNotEmpty()) {
+            currentText = newText
+            redoStack.clear()
+            return
+        }
+
+        undoStack.addLast(currentText)
+        if (undoStack.size > maxHistory) {
+            undoStack.removeFirst()
+        }
+        redoStack.clear()
+        currentText = newText
+    }
+
+    fun undo(): String? {
+        if (undoStack.isEmpty()) return null
+        redoStack.addLast(currentText)
+        currentText = undoStack.removeLast()
+        return currentText
+    }
+
+    fun redo(): String? {
+        if (redoStack.isEmpty()) return null
+        undoStack.addLast(currentText)
+        currentText = redoStack.removeLast()
+        return currentText
+    }
+}
 
 class TodoViewModel(private val todoDao: TodoDao) : ViewModel() {
 
@@ -34,6 +73,50 @@ class TodoViewModel(private val todoDao: TodoDao) : ViewModel() {
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = null
         )
+
+    // --- History System ---
+    private val rowHistories = mutableMapOf<String, RowHistory>()
+    val canUndoMap = mutableStateMapOf<String, Boolean>()
+    val canRedoMap = mutableStateMapOf<String, Boolean>()
+
+    fun initHistoryIfNeeds(rowId: String, initialText: String) {
+        if (!rowHistories.containsKey(rowId)) {
+            rowHistories[rowId] = RowHistory(initialText)
+            updateUndoRedoState(rowId)
+        }
+    }
+
+    fun pushHistory(rowId: String, newText: String) {
+        val history = rowHistories[rowId] ?: return
+        history.pushState(newText)
+        updateUndoRedoState(rowId)
+    }
+
+    fun undo(rowId: String): String? {
+        val history = rowHistories[rowId] ?: return null
+        val res = history.undo()
+        updateUndoRedoState(rowId)
+        return res
+    }
+
+    fun redo(rowId: String): String? {
+        val history = rowHistories[rowId] ?: return null
+        val res = history.redo()
+        updateUndoRedoState(rowId)
+        return res
+    }
+
+    private fun updateUndoRedoState(rowId: String) {
+        val history = rowHistories[rowId] ?: return
+        canUndoMap[rowId] = history.undoStack.isNotEmpty()
+        canRedoMap[rowId] = history.redoStack.isNotEmpty()
+    }
+
+    fun clearHistory() {
+        rowHistories.clear()
+        canUndoMap.clear()
+        canRedoMap.clear()
+    }
 
     fun insertGroup(group: TodoGroup) {
         viewModelScope.launch(Dispatchers.IO) {

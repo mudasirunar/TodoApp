@@ -92,11 +92,16 @@ class MainActivity : ComponentActivity() {
                             AddTodoScreen(
                                 existingGroup = existing,
                                 highlightQuery = query, // ✅ Pass the query here!
+                                viewModel = viewModel,
                                 onSave = { updated ->
                                     viewModel.insertGroup(updated)
+                                    viewModel.clearHistory()
                                     navController.popBackStack()
                                 },
-                                onBack = { navController.popBackStack() }
+                                onBack = { 
+                                    viewModel.clearHistory()
+                                    navController.popBackStack() 
+                                }
                             )
                         }
                     }
