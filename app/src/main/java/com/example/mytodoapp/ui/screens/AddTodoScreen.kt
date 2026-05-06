@@ -296,10 +296,9 @@ fun AddTodoScreen(
     LaunchedEffect(tasks.size) {
         if (tasks.size > previousTasksSize) {
             delay(100)
-            // Simply scroll to the absolute bottom of the list
-            val lastIndex = scrollState.layoutInfo.totalItemsCount - 1
-            if (lastIndex >= 0) {
-                scrollState.animateScrollToItem(lastIndex)
+            // Simply scroll to the absolute top of the screen
+            if (scrollState.layoutInfo.totalItemsCount > 0) {
+                scrollState.animateScrollToItem(0)
             }
         }
         previousTasksSize = tasks.size
@@ -386,7 +385,7 @@ fun AddTodoScreen(
                 onClick = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                     val newTask = TodoTask()
-                    tasks = tasks + newTask
+                    tasks = listOf(newTask) + tasks
                     focusMap[newTask.id] = FocusRequester()
                     newTaskToFocusId = newTask.id
                 },
@@ -592,7 +591,7 @@ fun AddTodoScreen(
                                 focusMap[nextTaskId]?.requestFocus()
                             } else {
                                 val newTask = TodoTask()
-                                tasks = tasks + newTask
+                                tasks = listOf(newTask) + tasks
                                 focusMap[newTask.id] = FocusRequester()
                                 newTaskToFocusId = newTask.id
                             }
@@ -631,7 +630,7 @@ fun AddTodoScreen(
                         LaunchedEffect(task.id) {
                             currentRequester.requestFocus()
                             delay(100) // Wait for keyboard and layout adjustments
-                            scrollState.animateScrollToItem(index = index + 2)
+                            scrollState.animateScrollToItem(0)
                             newTaskToFocusId = null
                         }
                     }
@@ -1181,16 +1180,16 @@ fun StatusSelector(
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.padding(horizontal = 8.dp)
+        modifier = Modifier.padding(horizontal = 4.dp)
     ) {
         Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             TodoStatus.entries.forEach { status ->
                 val isSelected = currentStatus == status
                 val dotSize by animateDpAsState(
-                    targetValue = if (isSelected) 28.dp else 22.dp,
+                    targetValue = if (isSelected) 24.dp else 18.dp,
                     animationSpec = spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessLow),
                     label = "pop"
                 )
@@ -1289,5 +1288,3 @@ class SearchHighlightTransformation(private val query: String, private val highl
         )
     }
 }
-
-
