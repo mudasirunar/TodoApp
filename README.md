@@ -32,12 +32,12 @@ This project follows the **MVVM (Model-View-ViewModel)** architectural pattern t
 
 | Workspace Dashboard | Task Editing & Highlights |
 | :---: | :---: |
-| ![Home Screen](screenshots/home_screen.jpg) | ![Search Highlight](screenshots/search_highligth.jpg) |
+| ![Home Screen](app/screenshots/home_screen.jpg) | ![Search Highlight](app/screenshots/search_highligth.jpg) |
 | *View collections, pin favorites, and track progress.* | *Search text dynamically highlights inside tasks.* |
 
 | Task Screen | AI Rewrite Styling |
 | :---: | :---: |
-| ![Tasks Screen](screenshots/tasks_screen.jpg) | ![AI Rewrite Dialog](screenshots/ai_rewrite_styling_dialog.jpg) |
+| ![Tasks Screen](app/screenshots/tasks_screen.jpg) | ![AI Rewrite Dialog](app/screenshots/ai_rewrite_styling_dialog.jpg) |
 | *Manage tasks with undo/redo, status tracking, and AI.* | *Choose professional or casual AI rewrite styles.* |
 
 ## 🚀 Installation
