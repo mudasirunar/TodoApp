@@ -44,7 +44,7 @@ This project follows the **MVVM (Model-View-ViewModel)** architectural pattern t
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/yourusername/TodoApp.git
+   git clone https://github.com/mudasirunar/TodoApp.git
    ```
 2. **Open in Android Studio:**
    * Open Android Studio.
