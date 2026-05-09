@@ -588,12 +588,32 @@ fun AddTodoScreen(
                                 }
                             }
                         },
+                        onMoveUp = {
+                            val currentIndex = tasks.indexOfFirst { it.id == task.id }
+                            if (currentIndex > 0) {
+                                val mutableTasks = tasks.toMutableList()
+                                val item = mutableTasks.removeAt(currentIndex)
+                                mutableTasks.add(currentIndex - 1, item)
+                                tasks = mutableTasks.toList()
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            }
+                        },
                         onMoveToTop = {
                             val currentIndex = tasks.indexOfFirst { it.id == task.id }
                             if (currentIndex > 0) {
                                 val mutableTasks = tasks.toMutableList()
                                 val item = mutableTasks.removeAt(currentIndex)
                                 mutableTasks.add(0, item)
+                                tasks = mutableTasks.toList()
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            }
+                        },
+                        onMoveDown = {
+                            val currentIndex = tasks.indexOfFirst { it.id == task.id }
+                            if (currentIndex < tasks.size - 1) {
+                                val mutableTasks = tasks.toMutableList()
+                                val item = mutableTasks.removeAt(currentIndex)
+                                mutableTasks.add(currentIndex + 1, item)
                                 tasks = mutableTasks.toList()
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             }
@@ -792,7 +812,9 @@ fun TaskEditRow(
     onRedo: () -> Unit,
     onUpdate: (TodoTask) -> Unit,
     onDelete: () -> Unit,
+    onMoveUp: () -> Unit,
     onMoveToTop: () -> Unit,
+    onMoveDown: () -> Unit,
     onMoveToBottom: () -> Unit,
     onImeAction: () -> Unit,
     onAiRewrite: (String, RewriteType) -> Unit,
@@ -1181,25 +1203,37 @@ fun TaskEditRow(
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        IconButton(
-                            onClick = onMoveToTop,
-                            modifier = Modifier.size(40.dp)
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .combinedClickable(
+                                    onClick = onMoveUp,
+                                    onLongClick = onMoveToTop
+                                ),
+                            contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.KeyboardArrowUp,
-                                contentDescription = "Move to top",
+                                contentDescription = "Move up",
                                 tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
                                 modifier = Modifier.size(28.dp)
                             )
                         }
 
-                        IconButton(
-                            onClick = onMoveToBottom,
-                            modifier = Modifier.size(40.dp)
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .combinedClickable(
+                                    onClick = onMoveDown,
+                                    onLongClick = onMoveToBottom
+                                ),
+                            contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.KeyboardArrowDown,
-                                contentDescription = "Move to bottom",
+                                contentDescription = "Move down",
                                 tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
                                 modifier = Modifier.size(28.dp)
                             )
