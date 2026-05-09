@@ -1,5 +1,6 @@
 package com.example.mytodoapp.data
 
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 import java.util.UUID
 
@@ -9,13 +10,15 @@ enum class TodoStatus(val color: Color, val label: String) {
     Done(Color(0xFF66BB6A), "Done")
 }
 
+@Immutable
 data class TodoTask(
     val id: String = UUID.randomUUID().toString(),
-    var text: String = "",
-    var status: TodoStatus = TodoStatus.ComingUp,
-    var isFavorite: Boolean = false
+    val text: String = "",
+    val status: TodoStatus = TodoStatus.ComingUp,
+    val isFavorite: Boolean = false
 )
 
+@Immutable
 data class TodoGroup(
     val id: String = UUID.randomUUID().toString(),
     val title: String = "",

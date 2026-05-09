@@ -52,14 +52,16 @@ interface GroqApiService {
 
 object AiHelper {
     private const val BASE_URL = "https://api.groq.com/openai/v1/"
-    private val apiKey = BuildConfig.GROQ_API_KEY
+    private val apiKey by lazy { BuildConfig.GROQ_API_KEY }
 
-    private val retrofit = Retrofit.Builder()
-        .baseUrl(BASE_URL)
-        .addConverterFactory(GsonConverterFactory.create())
-        .build()
+    private val retrofit by lazy {
+        Retrofit.Builder()
+            .baseUrl(BASE_URL)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+    }
 
-    private val apiService = retrofit.create(GroqApiService::class.java)
+    private val apiService by lazy { retrofit.create(GroqApiService::class.java) }
 
     /**
      * Rewrites the input text based on the selected mode.

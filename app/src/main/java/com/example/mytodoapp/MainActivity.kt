@@ -13,6 +13,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
@@ -38,9 +39,6 @@ class MainActivity : ComponentActivity() {
             val viewModel: TodoViewModel = viewModel(
                 factory = TodoViewModelFactory(todoDao)
             )
-            
-            // Observe the state from the ViewModel
-            val groups by viewModel.groups.collectAsState()
 
             // USE YOUR CUSTOM THEME HERE
             MyTodoAppTheme {
@@ -59,9 +57,16 @@ class MainActivity : ComponentActivity() {
                         popEnterTransition = { fadeIn(tween(300)) },
                         popExitTransition = { fadeOut(tween(300)) }
                     ) {
-                        composable("dashboard") {
+                        composable("dashboard") { backStackEntry ->
+                            val groups by viewModel.groups.collectAsStateWithLifecycle()
+                            val softDeleteGroupId by backStackEntry.savedStateHandle.getStateFlow<String?>("soft_delete_group_id", null).collectAsStateWithLifecycle()
+                            
                             DashboardScreen(
                                 groups = groups,
+                                softDeleteGroupId = softDeleteGroupId,
+                                onSoftDeleteHandled = {
+                                    backStackEntry.savedStateHandle.remove<String>("soft_delete_group_id")
+                                },
                                 onNavigateToEdit = { group, searchQuery ->
                                     navController.navigate("edit/${group.id}?query=$searchQuery")
                                 },
@@ -85,13 +90,23 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                         ) { backStack ->
+                            val groups by viewModel.groups.collectAsStateWithLifecycle()
+                            if (groups == null) {
+                                androidx.compose.foundation.layout.Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = androidx.compose.ui.Alignment.Center
+                                ) {
+                                    androidx.compose.material3.CircularProgressIndicator()
+                                }
+                                return@composable
+                            }
                             val id = backStack.arguments?.getString("groupId") ?: ""
-                            val query = backStack.arguments?.getString("query") ?: "" // Extract query
+                            val query = backStack.arguments?.getString("query") ?: ""
                             val existing = groups?.find { it.id == id } ?: TodoGroup(id = id)
 
                             AddTodoScreen(
                                 existingGroup = existing,
-                                highlightQuery = query, // ✅ Pass the query here!
+                                highlightQuery = query,
                                 viewModel = viewModel,
                                 onSave = { updated ->
                                     viewModel.insertGroup(updated)
@@ -101,6 +116,11 @@ class MainActivity : ComponentActivity() {
                                 onBack = { 
                                     viewModel.clearHistory()
                                     navController.popBackStack() 
+                                },
+                                onDelete = {
+                                    viewModel.clearHistory()
+                                    navController.previousBackStackEntry?.savedStateHandle?.set("soft_delete_group_id", existing.id)
+                                    navController.popBackStack()
                                 }
                             )
                         }

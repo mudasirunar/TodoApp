@@ -2,6 +2,7 @@ package com.example.mytodoapp.ui.screens
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -22,9 +23,11 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -51,6 +54,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
@@ -60,12 +68,18 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -89,6 +103,8 @@ import com.example.mytodoapp.data.TodoStatus
 @Composable
 fun DashboardScreen(
     groups: List<TodoGroup>?,
+    softDeleteGroupId: String? = null,
+    onSoftDeleteHandled: () -> Unit = {},
     onNavigateToEdit: (TodoGroup, String) -> Unit,
     onDeleteGroup: (TodoGroup) -> Unit,
     onTogglePin: (TodoGroup) -> Unit
@@ -98,9 +114,73 @@ fun DashboardScreen(
     // 1. TRACK SCROLL STATE
     val scrollState = rememberLazyListState()
 
+    // --- Soft Delete Logic ---
+    val pendingDeletions = remember { mutableStateMapOf<String, TodoGroup>() }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
+    var activeDeletionJob by remember { mutableStateOf<Job?>(null) }
+    var itemToScrollTo by remember { mutableStateOf<String?>(null) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            activeDeletionJob?.cancel()
+            pendingDeletions.values.forEach { group ->
+                onDeleteGroup(group)
+            }
+            pendingDeletions.clear()
+        }
+    }
+
+    val performSoftDelete: (TodoGroup) -> Unit = { group ->
+        activeDeletionJob?.cancel()
+
+        // Process any existing pending deletions permanently
+        pendingDeletions.values.forEach { pendingGroup ->
+            onDeleteGroup(pendingGroup)
+        }
+        pendingDeletions.clear()
+
+        // Queue the new deletion
+        pendingDeletions[group.id] = group
+
+        activeDeletionJob = coroutineScope.launch {
+            val result = snackbarHostState.showSnackbar(
+                message = "Deleted '${group.title.ifBlank { "Untitled" }}'",
+                actionLabel = "Undo",
+                duration = SnackbarDuration.Short
+            )
+
+            when (result) {
+                SnackbarResult.ActionPerformed -> {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    pendingDeletions.remove(group.id)
+                    itemToScrollTo = group.id
+                }
+                SnackbarResult.Dismissed -> {
+                    val pendingGroup = pendingDeletions.remove(group.id)
+                    if (pendingGroup != null) {
+                        onDeleteGroup(pendingGroup)
+                    }
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(softDeleteGroupId) {
+        if (softDeleteGroupId != null) {
+            val groupToSoftDelete = groups?.find { it.id == softDeleteGroupId }
+            if (groupToSoftDelete != null) {
+                performSoftDelete(groupToSoftDelete)
+            }
+            onSoftDeleteHandled()
+        }
+    }
+
+    val visibleGroups = groups?.filterNot { pendingDeletions.containsKey(it.id) }
+
     // Inside DashboardScreen
-    val sortedGroups = remember(groups) {
-        groups?.sortedWith(
+    val sortedGroups = remember(visibleGroups) {
+        visibleGroups?.sortedWith(
             compareByDescending<TodoGroup> { it.isPinned }
                 .thenByDescending { it.createdAt }
         ) ?: emptyList()
@@ -128,6 +208,31 @@ fun DashboardScreen(
         }
     }
 
+    LaunchedEffect(itemToScrollTo, filteredGroups) {
+        val targetId = itemToScrollTo
+        if (targetId != null) {
+            val index = filteredGroups.indexOfFirst { it.id == targetId }
+            if (index != -1) {
+                delay(200) // Ensure layout has fully completed
+                
+                val visibleItems = scrollState.layoutInfo.visibleItemsInfo
+                val itemInfo = visibleItems.find { it.key == targetId }
+                val viewportHeight = scrollState.layoutInfo.viewportSize.height
+                
+                // If it's not found, or it's clipped at the top (offset < 0),
+                // or more than half of it is below the viewport, then scroll to it.
+                val isVisuallyHidden = itemInfo == null || 
+                        itemInfo.offset < 0 || 
+                        itemInfo.offset + (itemInfo.size / 2) > viewportHeight
+
+                if (isVisuallyHidden) {
+                    scrollState.animateScrollToItem(index)
+                }
+                itemToScrollTo = null
+            }
+        }
+    }
+
     // Better Logic for FAB visibility (detecting scroll delta)
     var previousIndex by remember { mutableIntStateOf(0) }
     var previousScrollOffset by remember { mutableIntStateOf(0) }
@@ -151,8 +256,29 @@ fun DashboardScreen(
         }
     }
 
+    val bottomPadding by animateDpAsState(
+        targetValue = if (fabExpanded) 0.dp else 16.dp,
+        label = "snackbarPadding"
+    )
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        snackbarHost = {
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier
+                    .navigationBarsPadding()
+                    .padding(bottom = bottomPadding)
+            ) { data ->
+                Snackbar(
+                    snackbarData = data,
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    actionColor = MaterialTheme.colorScheme.primary,
+                    shape = RoundedCornerShape(12.dp)
+                )
+            }
+        },
         topBar = {
             TopAppBar(
                 title = {
@@ -251,7 +377,7 @@ fun DashboardScreen(
                 onConfirm = {
                     val target = groupToDelete!!
                     groupToDelete = null // Dismiss dialog instantly
-                    onDeleteGroup(target)
+                    performSoftDelete(target)
                 },
                 onDismiss = { groupToDelete = null }
             )
@@ -305,166 +431,174 @@ fun DashboardScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(filteredGroups, key = { it.id }) { group ->
-
-                    val favCount = group.tasks.count { it.isFavorite }
-                    val hasFavorites = favCount > 0
-                    val gold = Color(0xFFFFD700)
-                    val totalCount = group.tasks.size
-                    val favDoneCount = group.tasks.count { it.isFavorite && it.status.label == "Done" }
-                    val regularDoneCount = group.tasks.count { !it.isFavorite && it.status.label == "Done" }
-
-                    // 1. CREATE DISMISS STATE
-                    val dismissState = rememberSwipeToDismissBoxState(
-                        confirmValueChange = { value ->
-                            if (value == SwipeToDismissBoxValue.EndToStart) {
-                                // 2. TRIGGER VIBRATION
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-
-                                groupToDelete = group
-                                false
-                            } else {
-                                false
-                            }
-                        }
+                    GroupCardItem(
+                        group = group,
+                        isSearchActive = isSearchActive,
+                        searchQuery = searchQuery,
+                        onNavigateToEdit = onNavigateToEdit,
+                        onTogglePin = onTogglePin,
+                        onRequestDelete = { groupToDelete = it },
+                        haptic = haptic
                     )
+                }
+            }
+        }
+    }
+}
 
-                    SwipeToDismissBox(
-                        state = dismissState,
-                        modifier = Modifier.animateItem(),
-                        enableDismissFromStartToEnd = false,
-                        backgroundContent = {
-                            val isDismissed = dismissState.dismissDirection == SwipeToDismissBoxValue.EndToStart
-                            val color = if (isDismissed) MaterialTheme.colorScheme.error else Color.Transparent
+private val GoldColor = Color(0xFFFFD700)
 
-                            // 3. GLOSSY BACKGROUND WITH VIBRANT RED
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .clip(RoundedCornerShape(24.dp))
-                                    .background(color)
-                                    .padding(horizontal = 24.dp),
-                                contentAlignment = Alignment.CenterEnd
-                            ) {
-                                Icon(
-                                    Icons.Default.Delete,
-                                    contentDescription = "Delete",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(28.dp)
-                                )
-                            }
-                        }
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LazyItemScope.GroupCardItem(
+    group: TodoGroup,
+    isSearchActive: Boolean,
+    searchQuery: String,
+    onNavigateToEdit: (TodoGroup, String) -> Unit,
+    onTogglePin: (TodoGroup) -> Unit,
+    onRequestDelete: (TodoGroup) -> Unit,
+    haptic: androidx.compose.ui.hapticfeedback.HapticFeedback
+) {
+    val favCount = remember(group.tasks) { group.tasks.count { it.isFavorite } }
+    val hasFavorites = favCount > 0
+    val totalCount = group.tasks.size
+    val favDoneCount = remember(group.tasks) { group.tasks.count { it.isFavorite && it.status.label == "Done" } }
+    val regularDoneCount = remember(group.tasks) { group.tasks.count { !it.isFavorite && it.status.label == "Done" } }
+
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart) {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onRequestDelete(group)
+                false
+            } else {
+                false
+            }
+        }
+    )
+
+    SwipeToDismissBox(
+        state = dismissState,
+        modifier = Modifier.animateItem(),
+        enableDismissFromStartToEnd = false,
+        backgroundContent = {
+            val isDismissed = dismissState.dismissDirection == SwipeToDismissBoxValue.EndToStart
+            val color = if (isDismissed) MaterialTheme.colorScheme.error else Color.Transparent
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(color)
+                    .padding(horizontal = 24.dp),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = "Delete",
+                    tint = Color.White,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+        }
+    ) {
+        Card(
+            onClick = {
+                val queryToHighlight = if (isSearchActive && searchQuery.trim().isNotBlank()) searchQuery else ""
+                onNavigateToEdit(group, queryToHighlight)
+            },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier.size(40.dp).background(
+                            if (hasFavorites) GoldColor.copy(alpha = 0.15f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                            CircleShape
+                        ),
+                        contentAlignment = Alignment.Center
                     ) {
-                        val completedTasks = group.tasks.count { it.status.label == "Done" }
-                        val progress = if (group.tasks.isEmpty()) 0f else completedTasks.toFloat() / group.tasks.size
+                        Icon(
+                            imageVector = if (hasFavorites) Icons.Default.Star else Icons.Default.List,
+                            null,
+                            tint = if (hasFavorites) GoldColor else MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
 
-                        Card(
-                            onClick = {
-                                // Pass the query only if search is active and not blank
-                                val queryToHighlight = if (isSearchActive && searchQuery.trim().isNotBlank()) searchQuery else ""
-                                onNavigateToEdit(group, queryToHighlight) // Update your navigation callback to accept a String
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(24.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                        ) {
-                            Column(modifier = Modifier.padding(20.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    // Subtle Icon container for extra gloss
-                                    Box(
-                                        Modifier.size(40.dp).background(
-                                            if (hasFavorites) gold.copy(alpha = 0.15f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                                            CircleShape
-                                        ),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = if (hasFavorites) Icons.Default.Star else Icons.Default.List,
-                                            null,
-                                            tint = if (hasFavorites) gold else MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-                                    Spacer(Modifier.width(12.dp))
-
-                                    Column(Modifier.weight(1f)) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(
-                                                group.title.ifBlank { "Untitled" },
-                                                fontWeight = FontWeight.ExtraBold,
-                                                fontSize = 18.sp,
-                                                // ✅ ADD THESE TWO LINES:
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.weight(1f, fill = false)
-                                            )
-                                            // 4. FAVORITE BADGE: Show a small gold star if tasks are favorited
-                                            if (hasFavorites) {
-                                                Spacer(Modifier.width(6.dp))
-                                                Box(
-                                                    modifier = Modifier
-                                                        .clip(CircleShape)
-                                                        .background(gold.copy(alpha = 0.1f))
-                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                                ) {
-                                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                                        Icon(Icons.Default.Star, null, tint = gold, modifier = Modifier.size(10.dp))
-                                                        Text(" $favCount", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = gold)
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        // ... Inside DashboardScreen Column ...
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Text(
-                                                text = "${group.tasks.size} Tasks",
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Medium,
-                                                color = Color.Gray
-                                            )
-                                            Spacer(Modifier.width(8.dp))
-                                            // The new minimalist summary
-                                            CompactStatusSummary(group = group)
-                                        }
-                                    }
-
-                                    // PIN BUTTON
-                                    IconButton(onClick = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        onTogglePin(group)
-                                    }) {
-                                        Icon(
-                                            imageVector = if (group.isPinned) Icons.Default.PushPin else Icons.Outlined.PushPin,
-                                            contentDescription = "Pin",
-                                            // If pinned, use primary color; if not, use subtle gray
-                                            tint = if (group.isPinned) MaterialTheme.colorScheme.primary else Color.Gray.copy(alpha = 0.6f),
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-
-                                    IconButton(onClick = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        groupToDelete = group
-                                    }) {
-                                        Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f))
+                    Column(Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                group.title.ifBlank { "Untitled" },
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 18.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+                            if (hasFavorites) {
+                                Spacer(Modifier.width(6.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .clip(CircleShape)
+                                        .background(GoldColor.copy(alpha = 0.1f))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Star, null, tint = GoldColor, modifier = Modifier.size(10.dp))
+                                        Text(" $favCount", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = GoldColor)
                                     }
                                 }
-
-                                Spacer(Modifier.height(16.dp))
-
-                                MultiColorProgressBar(
-                                    totalTasks = totalCount,
-                                    regularDoneCount = regularDoneCount,
-                                    favDoneCount = favDoneCount
-                                )
                             }
                         }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "${group.tasks.size} Tasks",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color.Gray
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            CompactStatusSummary(group = group)
+                        }
+                    }
+
+                    // PIN BUTTON
+                    IconButton(onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onTogglePin(group)
+                    }) {
+                        Icon(
+                            imageVector = if (group.isPinned) Icons.Default.PushPin else Icons.Outlined.PushPin,
+                            contentDescription = "Pin",
+                            tint = if (group.isPinned) MaterialTheme.colorScheme.primary else Color.Gray.copy(alpha = 0.6f),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    IconButton(onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onRequestDelete(group)
+                    }) {
+                        Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f))
                     }
                 }
+
+                Spacer(Modifier.height(16.dp))
+
+                MultiColorProgressBar(
+                    totalTasks = totalCount,
+                    regularDoneCount = regularDoneCount,
+                    favDoneCount = favDoneCount
+                )
             }
         }
     }
@@ -538,7 +672,7 @@ fun CompactStatusSummary(group: TodoGroup) {
             .padding(horizontal = 8.dp, vertical = 2.dp)
     ) {
         TodoStatus.entries.forEach { status ->
-            val count = group.tasks.count { it.status == status }
+            val count = remember(group.tasks, status) { group.tasks.count { it.status == status } }
             if (count > 0) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,

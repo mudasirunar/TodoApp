@@ -10,15 +10,19 @@ import kotlinx.coroutines.flow.Flow
 
 // This class tells Room how to handle the List<TodoTask>
 class Converters {
+    companion object {
+        private val gson = Gson()
+        private val taskListType = object : TypeToken<List<TodoTask>>() {}.type
+    }
+
     @TypeConverter
     fun fromTaskList(value: List<TodoTask>): String {
-        return Gson().toJson(value)
+        return gson.toJson(value)
     }
 
     @TypeConverter
     fun toTaskList(value: String): List<TodoTask> {
-        val listType = object : TypeToken<List<TodoTask>>() {}.type
-        return Gson().fromJson(value, listType)
+        return gson.fromJson(value, taskListType)
     }
 }
 

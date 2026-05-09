@@ -6,7 +6,6 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
@@ -47,8 +46,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -122,20 +121,20 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.Popup
-import com.example.mytodoapp.utils.PdfHelper
-import com.example.mytodoapp.utils.SwipeTutorialDialog
 import com.example.mytodoapp.data.TodoGroup
 import com.example.mytodoapp.data.TodoStatus
 import com.example.mytodoapp.data.TodoTask
+import com.example.mytodoapp.ui.viewmodel.TodoViewModel
 import com.example.mytodoapp.utils.AiHelper
 import com.example.mytodoapp.utils.AiRewriteOptionsDialog
+import com.example.mytodoapp.utils.PdfHelper
 import com.example.mytodoapp.utils.RewriteType
-import com.example.mytodoapp.ui.viewmodel.TodoViewModel
+import com.example.mytodoapp.utils.SwipeTutorialDialog
+import com.example.mytodoapp.utils.TodoAlertDialog
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -171,7 +170,8 @@ fun AddTodoScreen(
     highlightQuery: String = "",
     viewModel: TodoViewModel,
     onSave: (TodoGroup) -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onDelete: () -> Unit
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
@@ -191,7 +191,7 @@ fun AddTodoScreen(
 
     // ✅ OPTIMIZATION 3: Conditional animation target
     val infiniteTransition = rememberInfiniteTransition(label = "highlightBounce")
-    val bounceOffset by infiniteTransition.animateFloat(
+    val bounceOffsetState = infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = if (isHighlightVisible) -6f else 0f,
         animationSpec = infiniteRepeatable(
@@ -200,6 +200,7 @@ fun AddTodoScreen(
         ),
         label = "bounceValue"
     )
+    val bounceProvider = remember(bounceOffsetState) { { bounceOffsetState.value } }
 
     val initialState = remember(existingGroup.id) {
         existingGroup.copy(tasks = existingGroup.tasks.map { it.copy() })
@@ -237,6 +238,7 @@ fun AddTodoScreen(
         }
     }
     var showBackDialog by rememberSaveable { mutableStateOf(false) }
+    var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
 
     // AI Rewrite States
     val aiJobs = remember { mutableStateMapOf<String, Job>() }
@@ -244,12 +246,6 @@ fun AddTodoScreen(
     val aiErrors = remember { mutableStateMapOf<String, String>() }
     val aiRewriteTypes = remember { mutableStateMapOf<String, RewriteType>() }
     var taskForAiDialog by remember { mutableStateOf<String?>(null) }
-
-    val cancelAiJob = { taskId: String ->
-        aiJobs[taskId]?.cancel()
-        aiJobs.remove(taskId)
-        aiLoadingStates[taskId] = false
-    }
 
     // ✅ OPTIMIZATION 5: Initialize all focus requesters once
     val focusMap = remember {
@@ -361,6 +357,18 @@ fun AddTodoScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        handleExit {
+                            showDeleteDialog = true
+                        }
+                    }) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Delete Project",
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
                     Button(
                         onClick = {
                             handleExit {
@@ -400,6 +408,19 @@ fun AddTodoScreen(
             }
         }
     ) { padding ->
+
+        if (showDeleteDialog) {
+            TodoAlertDialog(
+                title = "Delete Project?",
+                text = "Are you sure you want to delete '${title.ifBlank { "Untitled" }}'?",
+                confirmText = "Delete",
+                onConfirm = {
+                    showDeleteDialog = false
+                    onDelete()
+                },
+                onDismiss = { showDeleteDialog = false }
+            )
+        }
 
         if (showBackDialog) {
             AlertDialog(
@@ -468,7 +489,7 @@ fun AddTodoScreen(
                             .focusRequester(titleFocusRequester)
                             .graphicsLayer {
                                 translationY = if (isHighlightVisible && title.contains(highlightQuery, true)) {
-                                    bounceOffset
+                                    bounceProvider()
                                 } else 0f
                             },
                         visualTransformation = if (isHighlightVisible)
@@ -512,14 +533,14 @@ fun AddTodoScreen(
                     tasks,
                     key = { _, task -> task.id })
                 { index, task ->
-                    val currentRequester = focusMap.getOrPut(task.id) { FocusRequester() }
+                    val currentRequester = remember(task.id) { focusMap[task.id] ?: FocusRequester() }
 
                     // ✅ OPTIMIZATION 9: Isolated task row for better recomposition
                     TaskEditRow(
                         task = task,
                         highlightQuery = highlightQuery,
                         isHighlightActive = isHighlightVisible,
-                        bounceOffset = bounceOffset,
+                        bounceOffsetProvider = bounceProvider,
                         isShaking = shakingTaskId?.first == task.id,
                         isLoading = aiLoadingStates[task.id] ?: false,
                         error = aiErrors[task.id],
@@ -547,7 +568,9 @@ fun AddTodoScreen(
                             if (tasks.size > 1) {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 val idToRemove = task.id
-                                cancelAiJob(idToRemove) // Stop AI process
+                                aiJobs[idToRemove]?.cancel()
+                                aiJobs.remove(idToRemove)
+                                aiLoadingStates[idToRemove] = false
                                 tasks = tasks.filter { it.id != idToRemove }
                                 focusMap.remove(idToRemove)
                             } else {
@@ -754,7 +777,7 @@ fun TaskEditRow(
     task: TodoTask,
     highlightQuery: String,
     isHighlightActive: Boolean,
-    bounceOffset: Float,
+    bounceOffsetProvider: () -> Float,
     isShaking: Boolean = false,
     isLoading: Boolean = false,
     error: String? = null,
@@ -781,14 +804,23 @@ fun TaskEditRow(
     val dismissState = rememberSwipeToDismissBoxState()
     val currentValue = dismissState.currentValue
 
-    // ✅ OPTIMIZATION 11: Use remember to cache match calculation
-    val isMatch = remember(task.text, highlightQuery, isHighlightActive) {
-        isHighlightActive && highlightQuery.isNotEmpty() && task.text.contains(highlightQuery, ignoreCase = true)
+    // ✅ PERF FIX: Local text state prevents parent recomposition on every keystroke
+    var localText by remember(task.id) { mutableStateOf(task.text) }
+    // Sync external changes (undo/redo/AI rewrite) into local state
+    LaunchedEffect(task.text) {
+        if (task.text != localText) {
+            localText = task.text
+        }
+    }
+    // Debounced sync back to parent (only when user is typing)
+    var debounceJob by remember { mutableStateOf<Job?>(null) }
+
+    val isMatch = remember(localText, highlightQuery, isHighlightActive) {
+        isHighlightActive && highlightQuery.isNotEmpty() && localText.contains(highlightQuery, ignoreCase = true)
     }
 
-    // Word/Character count check (>= 7 letters)
-    val isAiEnabled = remember(task.text) {
-        task.text.trim().length >= 7
+    val isAiEnabled = remember(localText) {
+        localText.trim().length >= 7
     }
 
     // Error Tooltip state
@@ -808,10 +840,10 @@ fun TaskEditRow(
         onInitHistory(task.text)
     }
 
-    LaunchedEffect(task.text) {
+    LaunchedEffect(localText) {
         if (isFocused) {
             delay(1000)
-            onPushHistory(task.text)
+            onPushHistory(localText)
         }
     }
 
@@ -946,8 +978,16 @@ fun TaskEditRow(
                         contentAlignment = Alignment.CenterStart
                     ) {
                         TextField(
-                            value = task.text,
-                            onValueChange = { onUpdate(task.copy(text = it)) },
+                            value = localText,
+                            onValueChange = { newText ->
+                                localText = newText
+                                // Debounced sync to parent — avoids O(N) recomposition per keystroke
+                                debounceJob?.cancel()
+                                debounceJob = scope.launch {
+                                    delay(300)
+                                    onUpdate(task.copy(text = newText))
+                                }
+                            },
                             readOnly = isLoading,
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -955,11 +995,16 @@ fun TaskEditRow(
                                 .onFocusChanged { state ->
                                     isFocused = state.isFocused
                                     if (!state.isFocused) {
-                                        onPushHistory(task.text)
+                                        // Immediately sync on focus loss
+                                        debounceJob?.cancel()
+                                        if (localText != task.text) {
+                                            onUpdate(task.copy(text = localText))
+                                        }
+                                        onPushHistory(localText)
                                     }
                                 }
                                 .graphicsLayer {
-                                    translationY = if (isMatch && isHighlightActive) bounceOffset else 0f
+                                    translationY = if (isMatch && isHighlightActive) bounceOffsetProvider() else 0f
                                     alpha = if (isLoading) 0.5f else 1f
                                 },
                             visualTransformation = if (isHighlightActive)
@@ -969,7 +1014,14 @@ fun TaskEditRow(
                                 capitalization = KeyboardCapitalization.Sentences,
                                 imeAction = ImeAction.Next
                             ),
-                            keyboardActions = KeyboardActions(onNext = { onImeAction() }),
+                            keyboardActions = KeyboardActions(onNext = {
+                                // Flush pending text before IME action
+                                debounceJob?.cancel()
+                                if (localText != task.text) {
+                                    onUpdate(task.copy(text = localText))
+                                }
+                                onImeAction()
+                            }),
                             placeholder = {
                                 Text(
                                     "What needs to be done?",
