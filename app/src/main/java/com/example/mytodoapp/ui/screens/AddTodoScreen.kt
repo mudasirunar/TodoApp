@@ -128,6 +128,7 @@ import androidx.compose.ui.window.Popup
 import com.example.mytodoapp.data.TodoGroup
 import com.example.mytodoapp.data.TodoStatus
 import com.example.mytodoapp.data.TodoTask
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.mytodoapp.ui.viewmodel.TodoViewModel
 import com.example.mytodoapp.utils.AiHelper
 import com.example.mytodoapp.utils.AiRewriteOptionsDialog
@@ -180,6 +181,10 @@ fun AddTodoScreen(
     val titleFocusRequester = remember { FocusRequester() }
     var showTutorial by remember { mutableStateOf(false) }
     val scrollState = rememberLazyListState()
+
+    // Collect global AI Style from settings
+    val globalAiStyleState by viewModel.aiRewriteType.collectAsStateWithLifecycle()
+    val globalAiStyle = globalAiStyleState ?: RewriteType.Standard
 
     // ✅ OPTIMIZATION 2: Use time-based visibility instead of delay
     var highlightStartTime by remember { mutableLongStateOf(0L) }
@@ -284,7 +289,7 @@ fun AddTodoScreen(
 
     LaunchedEffect(shakingTaskId) {
         if (shakingTaskId != null) {
-            delay(600) 
+            delay(600)
             shakingTaskId = null
         }
     }
@@ -401,7 +406,7 @@ fun AddTodoScreen(
                 modifier = Modifier.imePadding()
             ) {
                 Icon(
-                    imageVector = Icons.Default.Add, 
+                    imageVector = Icons.Default.Add,
                     contentDescription = "Add New Task",
                     tint = MaterialTheme.colorScheme.onPrimary
                 )
@@ -523,7 +528,6 @@ fun AddTodoScreen(
                     TasksHeaderSection(
                         tasks = tasks,
                         onShowTutorial = {
-                            haptic.performHapticFeedback(HapticFeedbackType.KeyboardTap)
                             showTutorial = true
                         }
                     )
@@ -583,7 +587,7 @@ fun AddTodoScreen(
                                         } else {
                                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                         }
-                                        delay(50) 
+                                        delay(50)
                                     }
                                 }
                             }
@@ -642,11 +646,11 @@ fun AddTodoScreen(
                         onAiRewrite = { taskId, type ->
                             aiLoadingStates[taskId] = true
                             aiErrors.remove(taskId)
-                            
+
                             aiJobs[taskId] = scope.launch {
                                 try {
                                     val result = AiHelper.rewriteText(task.text, type.mode)
-                                    
+
                                     if (result.startsWith("Error:")) {
                                         aiErrors[taskId] = result.removePrefix("Error:").trim()
                                     } else {
@@ -708,13 +712,10 @@ fun AddTodoScreen(
     // AI Rewrite Dialog
     taskForAiDialog?.let { taskId ->
         AiRewriteOptionsDialog(
-            currentType = aiRewriteTypes[taskId] ?: RewriteType.Standard,
+            currentType = aiRewriteTypes[taskId] ?: globalAiStyle,
             onTypeSelected = { type ->
                 aiRewriteTypes[taskId] = type
                 taskForAiDialog = null
-                // Optional: Trigger rewrite immediately after selection? 
-                // The prompt says "user can select... by default it be set on default", 
-                // so I'll just save it.
             },
             onDismiss = { taskForAiDialog = null }
         )
@@ -1148,7 +1149,7 @@ fun TaskEditRow(
                             }
                         }
                     }
-                    
+
                     IconButton(
                         onClick = {
                             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -1188,7 +1189,7 @@ fun TaskEditRow(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("|", fontSize = 28.sp, fontWeight = FontWeight.Light, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f), modifier = Modifier.padding(bottom = 4.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            
+
                             StatusSelector(
                                 currentStatus = task.status,
                                 onStatusChange = { newStatus -> onUpdate(task.copy(status = newStatus)) }

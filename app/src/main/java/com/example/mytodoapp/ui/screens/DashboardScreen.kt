@@ -14,20 +14,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -36,73 +23,32 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.PlaylistAdd
-import androidx.compose.material.icons.filled.PushPin
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.SearchOff
-import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.PushPin
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Snackbar
-import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberSwipeToDismissBoxState
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.style.TextAlign
-import com.example.mytodoapp.R
 import com.example.mytodoapp.utils.TodoAlertDialog
 import com.example.mytodoapp.data.TodoGroup
 import com.example.mytodoapp.data.TodoStatus
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -111,18 +57,12 @@ fun DashboardScreen(
     softDeleteGroupId: String? = null,
     onSoftDeleteHandled: () -> Unit = {},
     onNavigateToEdit: (TodoGroup, String) -> Unit,
+    onNavigateToSettings: () -> Unit,
     onDeleteGroup: (TodoGroup) -> Unit,
     onTogglePin: (TodoGroup) -> Unit
 ) {
-    var showThemeDialog by remember { mutableStateOf(false) }
-    
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val themeManager = remember { com.example.mytodoapp.utils.ThemePreferenceManager(context) }
-    val currentThemeMode by themeManager.themeMode.collectAsStateWithLifecycle(initialValue = com.example.mytodoapp.utils.ThemeMode.SYSTEM)
-
     var groupToDelete by remember { mutableStateOf<TodoGroup?>(null) }
-    val haptic = LocalHapticFeedback.current // 1. GET HAPTIC PROVIDER
-    // 1. TRACK SCROLL STATE
+    val haptic = LocalHapticFeedback.current
     val scrollState = rememberLazyListState()
 
     // --- Soft Delete Logic ---
@@ -145,13 +85,11 @@ fun DashboardScreen(
     val performSoftDelete: (TodoGroup) -> Unit = { group ->
         activeDeletionJob?.cancel()
 
-        // Process any existing pending deletions permanently
         pendingDeletions.values.forEach { pendingGroup ->
             onDeleteGroup(pendingGroup)
         }
         pendingDeletions.clear()
 
-        // Queue the new deletion
         pendingDeletions[group.id] = group
 
         activeDeletionJob = coroutineScope.launch {
@@ -189,7 +127,6 @@ fun DashboardScreen(
 
     val visibleGroups = groups?.filterNot { pendingDeletions.containsKey(it.id) }
 
-    // Inside DashboardScreen
     val sortedGroups = remember(visibleGroups) {
         visibleGroups?.sortedWith(
             compareByDescending<TodoGroup> { it.isPinned }
@@ -198,14 +135,12 @@ fun DashboardScreen(
     }
 
     val focusRequester = remember { FocusRequester() }
-    // Search Feature
     val focusManager = LocalFocusManager.current
     var isSearchActive by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
 
-    // 1. Updated Filtering Logic
     val filteredGroups = remember(sortedGroups, searchQuery) {
-        val trimmedQuery = searchQuery.trim() // Handle accidental spaces
+        val trimmedQuery = searchQuery.trim()
 
         if (trimmedQuery.isEmpty()) {
             sortedGroups
@@ -224,14 +159,12 @@ fun DashboardScreen(
         if (targetId != null) {
             val index = filteredGroups.indexOfFirst { it.id == targetId }
             if (index != -1) {
-                delay(200) // Ensure layout has fully completed
+                delay(200)
                 
                 val visibleItems = scrollState.layoutInfo.visibleItemsInfo
                 val itemInfo = visibleItems.find { it.key == targetId }
                 val viewportHeight = scrollState.layoutInfo.viewportSize.height
                 
-                // If it's not found, or it's clipped at the top (offset < 0),
-                // or more than half of it is below the viewport, then scroll to it.
                 val isVisuallyHidden = itemInfo == null || 
                         itemInfo.offset < 0 || 
                         itemInfo.offset + (itemInfo.size / 2) > viewportHeight
@@ -244,16 +177,15 @@ fun DashboardScreen(
         }
     }
 
-    // Better Logic for FAB visibility (detecting scroll delta)
     var previousIndex by remember { mutableIntStateOf(0) }
     var previousScrollOffset by remember { mutableIntStateOf(0) }
     var fabExpanded by remember { mutableStateOf(true) }
 
     LaunchedEffect(scrollState.firstVisibleItemIndex, scrollState.firstVisibleItemScrollOffset) {
         fabExpanded = if (scrollState.firstVisibleItemIndex > previousIndex) {
-            false // Scrolling Down
+            false
         } else if (scrollState.firstVisibleItemIndex < previousIndex) {
-            true // Scrolling Up
+            true
         } else {
             scrollState.firstVisibleItemScrollOffset <= previousScrollOffset
         }
@@ -337,29 +269,15 @@ fun DashboardScreen(
                         } else {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 IconButton(
-                                    onClick = { 
-                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                        showThemeDialog = true 
-                                    },
+                                    onClick = onNavigateToSettings,
                                     modifier = Modifier.padding(end = 8.dp)
                                 ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(32.dp)
-                                            .clip(CircleShape),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        androidx.compose.foundation.Image(
-                                            painter = painterResource(id = R.drawable.ic_launcher_background),
-                                            contentDescription = null,
-                                            modifier = Modifier.fillMaxSize()
-                                        )
-                                        androidx.compose.foundation.Image(
-                                            painter = painterResource(id = R.drawable.ic_launcher_foreground),
-                                            contentDescription = "Theme Settings",
-                                            modifier = Modifier.fillMaxSize()
-                                        )
-                                    }
+                                    Icon(
+                                        imageVector = Icons.Default.Settings,
+                                        contentDescription = "Settings",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(24.dp)
+                                    )
                                 }
                                 Text("My Workspace", fontWeight = FontWeight.ExtraBold)
                             }
@@ -389,7 +307,6 @@ fun DashboardScreen(
             )
         },
         floatingActionButton = {
-            // 3. APPLY SMOOTH ANIMATION
             AnimatedVisibility(
                 visible = fabExpanded,
                 enter = scaleIn() + fadeIn(),
@@ -407,29 +324,6 @@ fun DashboardScreen(
         },
         containerColor = MaterialTheme.colorScheme.background
     ){ padding ->
-        if (showThemeDialog) {
-            val currentThemeString = when (currentThemeMode) {
-                com.example.mytodoapp.utils.ThemeMode.LIGHT -> "Light"
-                com.example.mytodoapp.utils.ThemeMode.DARK -> "Dark"
-                com.example.mytodoapp.utils.ThemeMode.SYSTEM -> "System"
-            }
-            ThemeSettingsDialog(
-                currentTheme = currentThemeString,
-                onThemeSelected = { selectedString -> 
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    val newMode = when (selectedString) {
-                        "Light" -> com.example.mytodoapp.utils.ThemeMode.LIGHT
-                        "Dark" -> com.example.mytodoapp.utils.ThemeMode.DARK
-                        else -> com.example.mytodoapp.utils.ThemeMode.SYSTEM
-                    }
-                    coroutineScope.launch {
-                        themeManager.saveThemeMode(newMode)
-                    }
-                },
-                onDismiss = { showThemeDialog = false }
-            )
-        }
-
         if (groupToDelete != null) {
             TodoAlertDialog(
                 title = "Delete Project?",
@@ -437,7 +331,7 @@ fun DashboardScreen(
                 confirmText = "Delete",
                 onConfirm = {
                     val target = groupToDelete!!
-                    groupToDelete = null // Dismiss dialog instantly
+                    groupToDelete = null
                     performSoftDelete(target)
                 },
                 onDismiss = { groupToDelete = null }
@@ -460,7 +354,7 @@ fun DashboardScreen(
                 verticalArrangement = Arrangement.Center
             ) {
                 Icon(
-                    imageVector = Icons.Default.PlaylistAdd, // Modern vector icon
+                    imageVector = Icons.Default.PlaylistAdd,
                     contentDescription = null,
                     modifier = Modifier.size(120.dp),
                     tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
@@ -469,7 +363,6 @@ fun DashboardScreen(
                 Text("Tap + to add your first project", color = Color.Gray)
             }
         } else if (filteredGroups.isEmpty()) {
-            // ✅ NEW: Empty Search Results State
             Column(
                 modifier = Modifier.fillMaxSize().padding(padding),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -632,7 +525,6 @@ private fun LazyItemScope.GroupCardItem(
                         }
                     }
 
-                    // PIN BUTTON
                     IconButton(onClick = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         onTogglePin(group)
@@ -676,17 +568,12 @@ fun MultiColorProgressBar(
     val primaryColor = MaterialTheme.colorScheme.primary
     val gold = Color(0xFFFFD700)
 
-    // Calculate the ratios
     val totalDoneCount = favDoneCount + regularDoneCount
     val totalProgress = if (totalTasks > 0) totalDoneCount.toFloat() / totalTasks else 0f
-
-    // Calculate the ratio of Gold within the DONE portion
     val goldRatioInDone = if (totalDoneCount > 0) favDoneCount.toFloat() / totalDoneCount else 0f
 
-    // Create the Smooth Gradient Brush
     val progressBrush = remember(favDoneCount, regularDoneCount) {
         if (favDoneCount > 0 && regularDoneCount > 0) {
-            // This creates a smooth "mix" area at the joining point
             val transitionStart = (goldRatioInDone - 0.1f).coerceAtLeast(0f)
             val transitionEnd = (goldRatioInDone + 0.1f).coerceAtMost(1f)
 
@@ -706,15 +593,14 @@ fun MultiColorProgressBar(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(10.dp) // Slightly taller for better texture visibility
+            .height(10.dp)
             .clip(CircleShape)
             .background(trackColor)
     ) {
-        // The Filled Portion
         Box(
             modifier = Modifier
                 .fillMaxHeight()
-                .fillMaxWidth(totalProgress) // Fills based on total completion
+                .fillMaxWidth(totalProgress)
                 .clip(CircleShape)
                 .background(progressBrush)
         )
@@ -729,7 +615,7 @@ fun CompactStatusSummary(group: TodoGroup) {
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier
             .clip(RoundedCornerShape(6.dp))
-            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.03f)) // Barely visible unified background
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.03f))
             .padding(horizontal = 8.dp, vertical = 2.dp)
     ) {
         TodoStatus.entries.forEach { status ->
@@ -739,132 +625,18 @@ fun CompactStatusSummary(group: TodoGroup) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    // Small vibrant dot
                     Box(
                         modifier = Modifier
                             .size(6.dp)
                             .clip(CircleShape)
                             .background(status.color)
                     )
-                    // Clean, subtle text
                     Text(
                         text = count.toString(),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                     )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun ThemeSettingsDialog(
-    currentTheme: String,
-    onThemeSelected: (String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
-        androidx.compose.material3.Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            shape = RoundedCornerShape(24.dp),
-            colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = androidx.compose.material3.CardDefaults.cardElevation(8.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(64.dp)
-                        .clip(CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    androidx.compose.foundation.Image(
-                        painter = painterResource(id = R.drawable.ic_launcher_background),
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                    androidx.compose.foundation.Image(
-                        painter = painterResource(id = R.drawable.ic_launcher_foreground),
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-                
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                Text(
-                    text = "App Theme",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                
-                Text(
-                    text = "Choose your preferred appearance.",
-                    fontSize = 14.sp,
-                    color = Color.Gray,
-                    modifier = Modifier.padding(top = 8.dp, bottom = 24.dp),
-                    textAlign = TextAlign.Center
-                )
-
-                // Segmented Control for Theme Options
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
-                        .padding(4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    val options = listOf("System", "Light", "Dark")
-                    options.forEach { option ->
-                        val isSelected = currentTheme == option
-                        
-                        // Animated background for selection
-                        val bgColor by androidx.compose.animation.animateColorAsState(
-                            targetValue = if (isSelected) MaterialTheme.colorScheme.surface else Color.Transparent,
-                            label = "themeBgColor"
-                        )
-                        
-                        // Animated text color
-                        val textColor by androidx.compose.animation.animateColorAsState(
-                            targetValue = if (isSelected) MaterialTheme.colorScheme.primary else Color.Gray,
-                            label = "themeTextColor"
-                        )
-
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(bgColor)
-                                .clickable { onThemeSelected(option) }
-                                .padding(vertical = 12.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = option,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                color = textColor,
-                                fontSize = 14.sp
-                            )
-                        }
-                    }
-                }
-                
-                Spacer(modifier = Modifier.height(24.dp))
-                
-                androidx.compose.material3.Button(
-                    onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Text("Done", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
             }
         }

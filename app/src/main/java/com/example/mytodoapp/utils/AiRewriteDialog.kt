@@ -21,10 +21,34 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 
-enum class RewriteType(val label: String, val description: String, val icon: ImageVector, val mode: RewriteMode) {
-    Standard("Standard", "Normal rewrite", Icons.Default.AutoAwesome, RewriteMode.DEFAULT),
-    Professional("Professional", "Formal, clear, workplace-ready", Icons.Default.BusinessCenter, RewriteMode.PROFESSIONAL),
-    Casual("Casual", "Friendly, simple, natural tone", Icons.Default.ChatBubbleOutline, RewriteMode.CASUAL)
+enum class RewriteType(
+    val label: String,
+    val settingsDescription: String,
+    val dialogDescription: String,
+    val icon: ImageVector,
+    val mode: RewriteMode
+) {
+    Standard(
+        "Standard",
+        "Default balanced and clear tone",
+        "Balanced, clear, and concise",
+        Icons.Default.AutoAwesome,
+        RewriteMode.DEFAULT
+    ),
+    Professional(
+        "Professional",
+        "Formal and workplace-ready tone",
+        "Polished and formal professional tone",
+        Icons.Default.BusinessCenter,
+        RewriteMode.PROFESSIONAL
+    ),
+    Casual(
+        "Casual",
+        "Friendly and conversational tone",
+        "Warm, friendly, and natural tone",
+        Icons.Default.ChatBubbleOutline,
+        RewriteMode.CASUAL
+    )
 }
 
 @Composable
@@ -89,7 +113,7 @@ fun AiRewriteOptionsDialog(
                                 color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = type.description,
+                                text = type.dialogDescription,
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                             )

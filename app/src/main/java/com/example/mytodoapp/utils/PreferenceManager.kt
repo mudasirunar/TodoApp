@@ -15,12 +15,13 @@ enum class ThemeMode {
     SYSTEM
 }
 
-private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "theme_settings")
+private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings_prefs")
 
-class ThemePreferenceManager(private val context: Context) {
+class PreferenceManager(private val context: Context) {
 
     companion object {
         val THEME_MODE_KEY = stringPreferencesKey("theme_mode")
+        val AI_REWRITE_TYPE_KEY = stringPreferencesKey("ai_rewrite_type")
     }
 
     val themeMode: Flow<ThemeMode> = context.dataStore.data.map { preferences ->
@@ -32,9 +33,24 @@ class ThemePreferenceManager(private val context: Context) {
         }
     }
 
+    val aiRewriteType: Flow<RewriteType> = context.dataStore.data.map { preferences ->
+        val typeName = preferences[AI_REWRITE_TYPE_KEY] ?: RewriteType.Standard.name
+        try {
+            RewriteType.valueOf(typeName)
+        } catch (e: Exception) {
+            RewriteType.Standard
+        }
+    }
+
     suspend fun saveThemeMode(mode: ThemeMode) {
         context.dataStore.edit { preferences ->
             preferences[THEME_MODE_KEY] = mode.name
+        }
+    }
+
+    suspend fun saveAiRewriteType(type: RewriteType) {
+        context.dataStore.edit { preferences ->
+            preferences[AI_REWRITE_TYPE_KEY] = type.name
         }
     }
 }

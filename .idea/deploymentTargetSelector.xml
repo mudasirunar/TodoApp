@@ -4,10 +4,10 @@
     <selectionStates>
       <SelectionState runConfigName="app">
         <option name="selectionMode" value="DROPDOWN" />
-        <DropdownSelection timestamp="2026-05-09T22:30:22.596379800Z">
+        <DropdownSelection timestamp="2026-05-10T15:05:25.488599900Z">
           <Target type="DEFAULT_BOOT">
             <handle>
-              <DeviceId pluginId="LocalEmulator" identifier="path=C:\Users\Tesla Laptops\.android\avd\Pixel_7.avd" />
+              <DeviceId pluginId="PhysicalDevice" identifier="serial=KF6PNFLRS44DNNGI" />
             </handle>
           </Target>
         </DropdownSelection>

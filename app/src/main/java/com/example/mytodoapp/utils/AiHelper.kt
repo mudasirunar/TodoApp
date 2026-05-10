@@ -130,6 +130,8 @@ object AiHelper {
             - Preserve abbreviations exactly as written.
             - Return ONLY the rewritten text.
             - Never return notes, labels, or commentary.
+            - Never explain, comment, or ask for clarification.
+            - If text cannot be meaningfully corrected, return it unchanged.
 
             GOOD EXAMPLE:
             Input: "by milk nd bread"
@@ -174,6 +176,8 @@ object AiHelper {
             - Preserve abbreviations exactly as written unless correction is necessary.
             - Return ONLY the rewritten text.
             - Never return notes or commentary.
+            - Never explain, comment, or ask for clarification.
+            - If text cannot be meaningfully corrected, return it unchanged.
 
             GOOD EXAMPLE:
             Input: "i wrked on android apps nd api integrations"
@@ -211,6 +215,8 @@ object AiHelper {
             - Preserve abbreviations exactly as written.
             - Return ONLY the rewritten text.
             - Never return notes or commentary.
+            - Never explain, comment, or ask for clarification.
+            - If text cannot be meaningfully corrected, return it unchanged.
 
             GOOD EXAMPLE:
             Input: "yar kal milte h m busy tha"

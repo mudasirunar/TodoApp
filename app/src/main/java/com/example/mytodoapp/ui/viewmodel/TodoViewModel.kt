@@ -1,4 +1,3 @@
-
 package com.example.mytodoapp.ui.viewmodel
 
 import androidx.compose.runtime.mutableStateMapOf
@@ -8,9 +7,14 @@ import androidx.lifecycle.viewModelScope
 import com.example.mytodoapp.data.TodoDao
 import com.example.mytodoapp.data.TodoGroup
 import com.example.mytodoapp.data.TodoGroupEntity
+import com.example.mytodoapp.utils.RewriteType
+import com.example.mytodoapp.utils.ThemeMode
+import com.example.mytodoapp.utils.PreferenceManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.flowOn
@@ -54,7 +58,10 @@ class RowHistory(initialText: String) {
     }
 }
 
-class TodoViewModel(private val todoDao: TodoDao) : ViewModel() {
+class TodoViewModel(
+    private val todoDao: TodoDao,
+    private val preferenceManager: PreferenceManager
+) : ViewModel() {
 
     // StateFlow holding the list of TodoGroups
     val groups: StateFlow<List<TodoGroup>?> = todoDao.getAllGroups()
@@ -75,6 +82,44 @@ class TodoViewModel(private val todoDao: TodoDao) : ViewModel() {
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = null
         )
+
+    // --- Settings Logic (Optimistic UI) ---
+    private val _themeMode = MutableStateFlow<ThemeMode?>(null)
+    val themeMode: StateFlow<ThemeMode?> = _themeMode.asStateFlow()
+
+    private val _aiRewriteType = MutableStateFlow<RewriteType?>(null)
+    val aiRewriteType: StateFlow<RewriteType?> = _aiRewriteType.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            preferenceManager.themeMode.collect { mode ->
+                if (_themeMode.value == null) {
+                    _themeMode.value = mode
+                }
+            }
+        }
+        viewModelScope.launch {
+            preferenceManager.aiRewriteType.collect { type ->
+                if (_aiRewriteType.value == null) {
+                    _aiRewriteType.value = type
+                }
+            }
+        }
+    }
+
+    fun saveThemeMode(mode: ThemeMode) {
+        _themeMode.value = mode // Instant UI update
+        viewModelScope.launch {
+            preferenceManager.saveThemeMode(mode)
+        }
+    }
+
+    fun saveAiRewriteType(type: RewriteType) {
+        _aiRewriteType.value = type // Instant UI update
+        viewModelScope.launch {
+            preferenceManager.saveAiRewriteType(type)
+        }
+    }
 
     // --- History System ---
     private val rowHistories = mutableMapOf<String, RowHistory>()
@@ -163,11 +208,14 @@ class TodoViewModel(private val todoDao: TodoDao) : ViewModel() {
     }
 }
 
-class TodoViewModelFactory(private val todoDao: TodoDao) : ViewModelProvider.Factory {
+class TodoViewModelFactory(
+    private val todoDao: TodoDao,
+    private val preferenceManager: PreferenceManager
+) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(TodoViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return TodoViewModel(todoDao) as T
+            return TodoViewModel(todoDao, preferenceManager) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

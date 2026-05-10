@@ -1,12 +1,10 @@
 package com.example.mytodoapp
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.material3.MaterialTheme
@@ -27,9 +25,9 @@ import com.example.mytodoapp.ui.viewmodel.TodoViewModel
 import com.example.mytodoapp.ui.viewmodel.TodoViewModelFactory
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
-import androidx.compose.foundation.isSystemInDarkTheme
+import com.example.mytodoapp.ui.screens.SettingsScreen
 import com.example.mytodoapp.utils.ThemeMode
-import com.example.mytodoapp.utils.ThemePreferenceManager
+import com.example.mytodoapp.utils.PreferenceManager
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -37,17 +35,13 @@ import kotlinx.coroutines.Dispatchers
 
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
-        val themeManager = ThemePreferenceManager(this)
-        val initialTheme = runBlocking { themeManager.themeMode.first() }
+        val preferenceManager = PreferenceManager(this)
+        
+        // ✅ SPLASH SCREEN: Wait for the theme to be loaded
+        val splashScreen = installSplashScreen()
+        var isThemeReady by mutableStateOf(false)
+        splashScreen.setKeepOnScreenCondition { !isThemeReady }
 
-        val mode = when (initialTheme) {
-            ThemeMode.LIGHT -> AppCompatDelegate.MODE_NIGHT_NO
-            ThemeMode.DARK -> AppCompatDelegate.MODE_NIGHT_YES
-            ThemeMode.SYSTEM -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
-        }
-        AppCompatDelegate.setDefaultNightMode(mode)
-
-        installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
@@ -55,36 +49,30 @@ class MainActivity : AppCompatActivity() {
         val todoDao = database.todoDao()
 
         setContent {
-            val coroutineScope = rememberCoroutineScope()
-            val themeMode by themeManager.themeMode.collectAsStateWithLifecycle(initialValue = initialTheme)
+            val viewModel: TodoViewModel = viewModel(
+                factory = TodoViewModelFactory(todoDao, preferenceManager)
+            )
+
+            // ✅ OPTIMIZATION: Collect from ViewModel (Optimistic UI) instead of DataStore directly
+            val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
             
             LaunchedEffect(themeMode) {
-                // Launch on Main to ensure UI isn't blocked during the click ripple
-                launch(Dispatchers.Main) {
-                    val mode = when (themeMode) {
-                        ThemeMode.LIGHT -> AppCompatDelegate.MODE_NIGHT_NO
-                        ThemeMode.DARK -> AppCompatDelegate.MODE_NIGHT_YES
-                        ThemeMode.SYSTEM -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
-                    }
-                    AppCompatDelegate.setDefaultNightMode(mode)
+                if (themeMode != null) {
+                    isThemeReady = true
                 }
             }
+
+            // Fallback while loading
+            if (themeMode == null) return@setContent
 
             val darkTheme = when (themeMode) {
                 ThemeMode.LIGHT -> false
                 ThemeMode.DARK -> true
-                ThemeMode.SYSTEM -> {
-                    // Trigger recomposition on config changes
-                    val unused = androidx.compose.ui.platform.LocalConfiguration.current 
-                    // Read the pure, global system UI mode bypassing AppCompatDelegate overrides
+                else -> {
                     val systemConfig = android.content.res.Resources.getSystem().configuration
                     (systemConfig.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
                 }
             }
-
-            val viewModel: TodoViewModel = viewModel(
-                factory = TodoViewModelFactory(todoDao)
-            )
 
             MyTodoAppTheme(darkTheme = darkTheme) {
                 Surface(
@@ -96,10 +84,18 @@ class MainActivity : AppCompatActivity() {
                         NavHost(
                             navController,
                             startDestination = "dashboard",
-                            enterTransition = { fadeIn(tween(300)) },
-                            exitTransition = { fadeOut(tween(300)) },
-                            popEnterTransition = { fadeIn(tween(300)) },
-                            popExitTransition = { fadeOut(tween(300)) }
+                            enterTransition = { 
+                                slideInHorizontally(animationSpec = tween(400)) { it } + fadeIn(tween(400)) 
+                            },
+                            exitTransition = { 
+                                slideOutHorizontally(animationSpec = tween(400)) { -it } + fadeOut(tween(400)) 
+                            },
+                            popEnterTransition = { 
+                                slideInHorizontally(animationSpec = tween(400)) { -it } + fadeIn(tween(400)) 
+                            },
+                            popExitTransition = { 
+                                slideOutHorizontally(animationSpec = tween(400)) { it } + fadeOut(tween(400)) 
+                            }
                         ) {
                             composable("dashboard") { backStackEntry ->
                                 val groups by viewModel.groups.collectAsStateWithLifecycle()
@@ -117,12 +113,28 @@ class MainActivity : AppCompatActivity() {
                                     onNavigateToEdit = { group, searchQuery ->
                                         navController.navigate("edit/${group.id}?query=$searchQuery")
                                     },
+                                    onNavigateToSettings = {
+                                        navController.navigate("settings")
+                                    },
                                     onDeleteGroup = { group ->
                                         viewModel.deleteGroup(group)
                                     },
                                     onTogglePin = { group ->
                                         viewModel.togglePin(group)
                                     }
+                                )
+                            }
+
+                            composable("settings") {
+                                val currentTheme by viewModel.themeMode.collectAsStateWithLifecycle()
+                                val currentAiStyle by viewModel.aiRewriteType.collectAsStateWithLifecycle()
+                                
+                                SettingsScreen(
+                                    currentTheme = currentTheme ?: ThemeMode.SYSTEM,
+                                    onThemeSelected = { viewModel.saveThemeMode(it) },
+                                    currentAiStyle = currentAiStyle ?: com.example.mytodoapp.utils.RewriteType.Standard,
+                                    onAiStyleSelected = { viewModel.saveAiRewriteType(it) },
+                                    onBack = { navController.popBackStack() }
                                 )
                             }
 
