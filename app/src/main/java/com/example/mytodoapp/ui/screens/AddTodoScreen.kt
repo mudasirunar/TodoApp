@@ -53,11 +53,8 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.input.OffsetMapping
-import androidx.compose.ui.text.input.TransformedText
-import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.*
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -127,6 +124,9 @@ fun AddTodoScreen(
 
     // ✅ UI STATE FOR EXPANDABLE TOOLBAR
     var isControlsExpanded by rememberSaveable { mutableStateOf(false) }
+
+    // ✅ FIX: PREVENT ANIMATION RE-TRIGGERING
+    var hasAnimatedHighlight by rememberSaveable { mutableStateOf(false) }
     
     // ✅ OPTIMIZATION 2: Use time-based visibility instead of delay
     var highlightStartTime by remember { mutableLongStateOf(0L) }
@@ -183,23 +183,27 @@ fun AddTodoScreen(
     }
 
     LaunchedEffect(highlightQuery) {
-        delay(100)
-        if (title.isEmpty()) {
-            titleFocusRequester.requestFocus()
+        val trimmed = highlightQuery.trim()
+        if (hasAnimatedHighlight || trimmed.isEmpty()) {
+            if (title.isEmpty() && !hasAnimatedHighlight) titleFocusRequester.requestFocus()
+            return@LaunchedEffect
         }
 
-        if (highlightQuery.trim().isNotEmpty()) {
+        hasAnimatedHighlight = true // ✅ Mark immediately so it never runs again
+
+        try {
+            delay(100)
             highlightStartTime = System.currentTimeMillis()
-            val titleMatch = title.contains(highlightQuery, ignoreCase = true)
+            val titleMatch = title.contains(trimmed, ignoreCase = true)
             if (!titleMatch) {
-                val taskIndex = tasks.indexOfFirst { it.text.contains(highlightQuery, ignoreCase = true) }
+                val taskIndex = tasks.indexOfFirst { it.text.contains(trimmed, ignoreCase = true) }
                 if (taskIndex != -1) {
                     scrollState.animateScrollToItem(index = taskIndex + 2)
                 }
             }
-
             delay(3000)
-            highlightStartTime = 0L
+        } finally {
+            highlightStartTime = 0L // ✅ Ensure animation is destroyed
         }
     }
 
@@ -363,11 +367,12 @@ fun AddTodoScreen(
                                 },
                                 label = "toggleIcon"
                             ) { expanded ->
-                                val icon = if (expanded) Icons.Default.KeyboardArrowRight else Icons.Default.KeyboardArrowLeft
+                                val icon = if (expanded) Icons.Default.ChevronRight else Icons.Default.ChevronLeft
                                 Icon(
                                     imageVector = icon,
                                     contentDescription = if (expanded) "Collapse" else "Expand",
-                                    tint = MaterialTheme.colorScheme.primary
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(24.dp)
                                 )
                             }
                         }
@@ -788,22 +793,29 @@ fun TaskEditRow(
     val currentValue = dismissState.currentValue
 
     // ✅ PERF FIX: Local text state prevents parent recomposition on every keystroke
-    var localText by remember(task.id) { mutableStateOf(task.text) }
+    // ✅ CURSOR FIX: Use TextFieldValue to control cursor position
+    var localTextFieldValue by remember(task.id) { 
+        mutableStateOf(TextFieldValue(task.text, selection = TextRange(task.text.length))) 
+    }
+    
     // Sync external changes (undo/redo/AI rewrite) into local state
     LaunchedEffect(task.text) {
-        if (task.text != localText) {
-            localText = task.text
+        if (task.text != localTextFieldValue.text) {
+            localTextFieldValue = localTextFieldValue.copy(
+                text = task.text,
+                selection = TextRange(task.text.length)
+            )
         }
     }
     // Debounced sync back to parent (only when user is typing)
     var debounceJob by remember { mutableStateOf<Job?>(null) }
 
-    val isMatch = remember(localText, highlightQuery, isHighlightActive) {
-        isHighlightActive && highlightQuery.isNotEmpty() && localText.contains(highlightQuery, ignoreCase = true)
+    val isMatch = remember(localTextFieldValue.text, highlightQuery, isHighlightActive) {
+        isHighlightActive && highlightQuery.isNotEmpty() && localTextFieldValue.text.contains(highlightQuery, ignoreCase = true)
     }
 
-    val isAiEnabled = remember(localText) {
-        localText.trim().length >= 7
+    val isAiEnabled = remember(localTextFieldValue.text) {
+        localTextFieldValue.text.trim().length >= 7
     }
 
     // Error Tooltip state
@@ -823,10 +835,10 @@ fun TaskEditRow(
         onInitHistory(task.text)
     }
 
-    LaunchedEffect(localText) {
+    LaunchedEffect(localTextFieldValue.text) {
         if (isFocused) {
             delay(1000)
-            onPushHistory(localText)
+            onPushHistory(localTextFieldValue.text)
         }
     }
 
@@ -961,14 +973,14 @@ fun TaskEditRow(
                         contentAlignment = Alignment.CenterStart
                     ) {
                         TextField(
-                            value = localText,
-                            onValueChange = { newText ->
-                                localText = newText
+                            value = localTextFieldValue,
+                            onValueChange = { newValue ->
+                                localTextFieldValue = newValue
                                 // Debounced sync to parent — avoids O(N) recomposition per keystroke
                                 debounceJob?.cancel()
                                 debounceJob = scope.launch {
                                     delay(300)
-                                    onUpdate(task.copy(text = newText))
+                                    onUpdate(task.copy(text = newValue.text))
                                 }
                             },
                             readOnly = isLoading,
@@ -977,13 +989,19 @@ fun TaskEditRow(
                                 .focusRequester(focusRequester)
                                 .onFocusChanged { state ->
                                     isFocused = state.isFocused
+                                    if (state.isFocused) {
+                                        // ✅ CURSOR FIX: Move to end when focused
+                                        localTextFieldValue = localTextFieldValue.copy(
+                                            selection = TextRange(localTextFieldValue.text.length)
+                                        )
+                                    }
                                     if (!state.isFocused) {
                                         // Immediately sync on focus loss
                                         debounceJob?.cancel()
-                                        if (localText != task.text) {
-                                            onUpdate(task.copy(text = localText))
+                                        if (localTextFieldValue.text != task.text) {
+                                            onUpdate(task.copy(text = localTextFieldValue.text))
                                         }
-                                        onPushHistory(localText)
+                                        onPushHistory(localTextFieldValue.text)
                                     }
                                 }
                                 .graphicsLayer {
@@ -1000,8 +1018,8 @@ fun TaskEditRow(
                             keyboardActions = KeyboardActions(onNext = {
                                 // Flush pending text before IME action
                                 debounceJob?.cancel()
-                                if (localText != task.text) {
-                                    onUpdate(task.copy(text = localText))
+                                if (localTextFieldValue.text != task.text) {
+                                    onUpdate(task.copy(text = localTextFieldValue.text))
                                 }
                                 onImeAction()
                             }),

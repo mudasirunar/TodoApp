@@ -313,7 +313,10 @@ fun DashboardScreen(
                 exit = scaleOut() + fadeOut()
             ) {
                 FloatingActionButton(
-                    onClick = { onNavigateToEdit(TodoGroup(), "") },
+                    onClick = { 
+                        focusManager.clearFocus()
+                        onNavigateToEdit(TodoGroup(), "") 
+                    },
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
                     shape = RoundedCornerShape(18.dp)
@@ -413,6 +416,7 @@ private fun LazyItemScope.GroupCardItem(
     onRequestDelete: (TodoGroup) -> Unit,
     haptic: androidx.compose.ui.hapticfeedback.HapticFeedback
 ) {
+    val focusManager = LocalFocusManager.current
     val favCount = remember(group.tasks) { group.tasks.count { it.isFavorite } }
     val hasFavorites = favCount > 0
     val totalCount = group.tasks.size
@@ -458,6 +462,7 @@ private fun LazyItemScope.GroupCardItem(
     ) {
         Card(
             onClick = {
+                focusManager.clearFocus()
                 val queryToHighlight = if (isSearchActive && searchQuery.trim().isNotBlank()) searchQuery else ""
                 onNavigateToEdit(group, queryToHighlight)
             },
