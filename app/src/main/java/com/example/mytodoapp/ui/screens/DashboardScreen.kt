@@ -13,6 +13,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -95,9 +96,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextAlign
+import com.example.mytodoapp.R
 import com.example.mytodoapp.utils.TodoAlertDialog
 import com.example.mytodoapp.data.TodoGroup
 import com.example.mytodoapp.data.TodoStatus
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -109,6 +114,12 @@ fun DashboardScreen(
     onDeleteGroup: (TodoGroup) -> Unit,
     onTogglePin: (TodoGroup) -> Unit
 ) {
+    var showThemeDialog by remember { mutableStateOf(false) }
+    
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val themeManager = remember { com.example.mytodoapp.utils.ThemePreferenceManager(context) }
+    val currentThemeMode by themeManager.themeMode.collectAsStateWithLifecycle(initialValue = com.example.mytodoapp.utils.ThemeMode.SYSTEM)
+
     var groupToDelete by remember { mutableStateOf<TodoGroup?>(null) }
     val haptic = LocalHapticFeedback.current // 1. GET HAPTIC PROVIDER
     // 1. TRACK SCROLL STATE
@@ -152,7 +163,7 @@ fun DashboardScreen(
 
             when (result) {
                 SnackbarResult.ActionPerformed -> {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     pendingDeletions.remove(group.id)
                     itemToScrollTo = group.id
                 }
@@ -324,7 +335,34 @@ fun DashboardScreen(
                                 textStyle = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                             )
                         } else {
-                            Text("My Workspace", fontWeight = FontWeight.ExtraBold)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(
+                                    onClick = { 
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        showThemeDialog = true 
+                                    },
+                                    modifier = Modifier.padding(end = 8.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        androidx.compose.foundation.Image(
+                                            painter = painterResource(id = R.drawable.ic_launcher_background),
+                                            contentDescription = null,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                        androidx.compose.foundation.Image(
+                                            painter = painterResource(id = R.drawable.ic_launcher_foreground),
+                                            contentDescription = "Theme Settings",
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
+                                }
+                                Text("My Workspace", fontWeight = FontWeight.ExtraBold)
+                            }
                         }
                     }
                 },
@@ -369,6 +407,29 @@ fun DashboardScreen(
         },
         containerColor = MaterialTheme.colorScheme.background
     ){ padding ->
+        if (showThemeDialog) {
+            val currentThemeString = when (currentThemeMode) {
+                com.example.mytodoapp.utils.ThemeMode.LIGHT -> "Light"
+                com.example.mytodoapp.utils.ThemeMode.DARK -> "Dark"
+                com.example.mytodoapp.utils.ThemeMode.SYSTEM -> "System"
+            }
+            ThemeSettingsDialog(
+                currentTheme = currentThemeString,
+                onThemeSelected = { selectedString -> 
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    val newMode = when (selectedString) {
+                        "Light" -> com.example.mytodoapp.utils.ThemeMode.LIGHT
+                        "Dark" -> com.example.mytodoapp.utils.ThemeMode.DARK
+                        else -> com.example.mytodoapp.utils.ThemeMode.SYSTEM
+                    }
+                    coroutineScope.launch {
+                        themeManager.saveThemeMode(newMode)
+                    }
+                },
+                onDismiss = { showThemeDialog = false }
+            )
+        }
+
         if (groupToDelete != null) {
             TodoAlertDialog(
                 title = "Delete Project?",
@@ -692,6 +753,118 @@ fun CompactStatusSummary(group: TodoGroup) {
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ThemeSettingsDialog(
+    currentTheme: String,
+    onThemeSelected: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        androidx.compose.material3.Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            shape = RoundedCornerShape(24.dp),
+            colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = androidx.compose.material3.CardDefaults.cardElevation(8.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .clip(CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    androidx.compose.foundation.Image(
+                        painter = painterResource(id = R.drawable.ic_launcher_background),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    androidx.compose.foundation.Image(
+                        painter = painterResource(id = R.drawable.ic_launcher_foreground),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Text(
+                    text = "App Theme",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                
+                Text(
+                    text = "Choose your preferred appearance.",
+                    fontSize = 14.sp,
+                    color = Color.Gray,
+                    modifier = Modifier.padding(top = 8.dp, bottom = 24.dp),
+                    textAlign = TextAlign.Center
+                )
+
+                // Segmented Control for Theme Options
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    val options = listOf("System", "Light", "Dark")
+                    options.forEach { option ->
+                        val isSelected = currentTheme == option
+                        
+                        // Animated background for selection
+                        val bgColor by androidx.compose.animation.animateColorAsState(
+                            targetValue = if (isSelected) MaterialTheme.colorScheme.surface else Color.Transparent,
+                            label = "themeBgColor"
+                        )
+                        
+                        // Animated text color
+                        val textColor by androidx.compose.animation.animateColorAsState(
+                            targetValue = if (isSelected) MaterialTheme.colorScheme.primary else Color.Gray,
+                            label = "themeTextColor"
+                        )
+
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(bgColor)
+                                .clickable { onThemeSelected(option) }
+                                .padding(vertical = 12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = option,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = textColor,
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(24.dp))
+                
+                androidx.compose.material3.Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("Done", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
             }
         }
