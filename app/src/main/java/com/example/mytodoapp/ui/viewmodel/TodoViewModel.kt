@@ -121,6 +121,14 @@ class TodoViewModel(
         }
     }
 
+    // --- Preview System (Non-persistent) ---
+    private val _previewGroup = MutableStateFlow<TodoGroup?>(null)
+    val previewGroup = _previewGroup.asStateFlow()
+
+    fun setPreviewGroup(group: TodoGroup?) {
+        _previewGroup.value = group
+    }
+
     // --- History System ---
     private val rowHistories = mutableMapOf<String, RowHistory>()
     val canUndoMap = mutableStateMapOf<String, Boolean>()

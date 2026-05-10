@@ -20,11 +20,11 @@ import com.example.mytodoapp.data.TodoDatabase
 import com.example.mytodoapp.data.TodoGroup
 import com.example.mytodoapp.ui.screens.AddTodoScreen
 import com.example.mytodoapp.ui.screens.DashboardScreen
+import com.example.mytodoapp.ui.screens.PdfPreviewScreen
 import com.example.mytodoapp.ui.theme.MyTodoAppTheme
 import com.example.mytodoapp.ui.viewmodel.TodoViewModel
 import com.example.mytodoapp.ui.viewmodel.TodoViewModelFactory
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.app.AppCompatDelegate
 import com.example.mytodoapp.ui.screens.SettingsScreen
 import com.example.mytodoapp.utils.ThemeMode
 import com.example.mytodoapp.utils.PreferenceManager
@@ -139,6 +139,28 @@ class MainActivity : AppCompatActivity() {
                             }
 
                             composable(
+                                route = "pdf_preview/{groupId}",
+                                arguments = listOf(
+                                    navArgument("groupId") { type = NavType.StringType }
+                                )
+                            ) { backStack ->
+                                val groupId = backStack.arguments?.getString("groupId") ?: ""
+                                val groups by viewModel.groups.collectAsStateWithLifecycle()
+                                val previewGroup by viewModel.previewGroup.collectAsStateWithLifecycle()
+
+                                // Use previewGroup if available (unsaved data), otherwise fallback to DB
+                                val group = previewGroup ?: groups?.find { it.id == groupId } ?: TodoGroup(id = groupId)
+
+                                PdfPreviewScreen(
+                                    group = group,
+                                    onBack = { 
+                                        viewModel.setPreviewGroup(null) // Clean up
+                                        navController.popBackStack() 
+                                    }
+                                )
+                            }
+
+                            composable(
                                 route = "edit/{groupId}?query={query}",
                                 arguments = listOf(
                                     navArgument("groupId") { type = NavType.StringType },
@@ -183,7 +205,13 @@ class MainActivity : AppCompatActivity() {
                                             existing.id
                                         )
                                         navController.popBackStack()
+                                    },
+                                    onNavigateToPreview = { unsavedGroup ->
+                                        // ✅ SHARE VIA VIEWMODEL
+                                        viewModel.setPreviewGroup(unsavedGroup)
+                                        navController.navigate("pdf_preview/${unsavedGroup.id}")
                                     }
+
                                 )
                             }
                     }

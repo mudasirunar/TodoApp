@@ -6,35 +6,15 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.LinearOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -44,56 +24,13 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.PictureAsPdf
-import androidx.compose.material.icons.filled.Redo
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.StarOutline
-import androidx.compose.material.icons.filled.Undo
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CenterAlignedTopAppBar
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberSwipeToDismissBoxState
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
@@ -121,6 +58,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
@@ -172,7 +110,8 @@ fun AddTodoScreen(
     viewModel: TodoViewModel,
     onSave: (TodoGroup) -> Unit,
     onBack: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onNavigateToPreview: (TodoGroup) -> Unit
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
@@ -186,6 +125,9 @@ fun AddTodoScreen(
     val globalAiStyleState by viewModel.aiRewriteType.collectAsStateWithLifecycle()
     val globalAiStyle = globalAiStyleState ?: RewriteType.Standard
 
+    // ✅ UI STATE FOR EXPANDABLE TOOLBAR
+    var isControlsExpanded by rememberSaveable { mutableStateOf(false) }
+    
     // ✅ OPTIMIZATION 2: Use time-based visibility instead of delay
     var highlightStartTime by remember { mutableLongStateOf(0L) }
     val isHighlightVisible by remember {
@@ -210,8 +152,7 @@ fun AddTodoScreen(
     val initialState = remember(existingGroup.id) {
         existingGroup.copy(tasks = existingGroup.tasks.map { it.copy() })
     }
-    var showPdfPreview by remember { mutableStateOf(false) }
-
+    
     // ✅ OPTIMIZATION 4: Use custom saver instead of Gson
     var title by rememberSaveable { mutableStateOf(existingGroup.title) }
     var tasks by rememberSaveable(stateSaver = todoListSaver) {
@@ -220,28 +161,8 @@ fun AddTodoScreen(
         )
     }
 
-    val createDocumentLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/pdf")
-    ) { uri ->
-        if (uri != null) {
-            try {
-                PdfHelper.generateTodoPdf(context, uri, title, tasks)
-                Toast.makeText(context, "PDF saved successfully!", Toast.LENGTH_SHORT).show()
-            } catch (e: Exception) {
-                Toast.makeText(context, "Failed to save PDF", Toast.LENGTH_SHORT).show()
-            }
-        } else {
-            Toast.makeText(context, "Export halted", Toast.LENGTH_SHORT).show()
-        }
-    }
+    val isPdfEnabled = remember(tasks) { tasks.any { it.text.isNotBlank() } }
 
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            showPdfPreview = true
-        }
-    }
     var showBackDialog by rememberSaveable { mutableStateOf(false) }
     var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
 
@@ -336,61 +257,123 @@ fun AddTodoScreen(
 
     BackHandler(enabled = true) { onNavigateBack() }
 
-    if (showPdfPreview) {
-        PdfHelper.PdfPreviewDialog(
-            title = title,
-            tasks = tasks,
-            onDismiss = { showPdfPreview = false },
-            onConfirm = {
-                showPdfPreview = false
-                createDocumentLauncher.launch("Todo_${title.ifBlank { "List" }}.pdf")
-            }
-        )
-    }
-
     if (showTutorial) {
         SwipeTutorialDialog(onDismiss = { showTutorial = false })
     }
 
     Scaffold(
         topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text(if (title.isBlank()) "Untitled" else title, fontWeight = FontWeight.Bold) },
-                navigationIcon = {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding(),
+                color = MaterialTheme.colorScheme.background,
+                tonalElevation = 0.dp
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(64.dp)
+                        .padding(horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // 1. BACK BUTTON
                     IconButton(onClick = { onNavigateBack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, null)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
-                },
-                actions = {
-                    IconButton(onClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        handleExit {
-                            showDeleteDialog = true
-                        }
-                    }) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Delete Project",
-                            tint = MaterialTheme.colorScheme.error
+
+                    // 2. ANIMATED TITLE (Moves from center to left when expanded)
+                    val titleBias by animateFloatAsState(
+                        targetValue = if (isControlsExpanded) -1f else 0f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = Spring.StiffnessMediumLow
+                        ),
+                        label = "titlePosition"
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 8.dp),
+                        contentAlignment = BiasAlignment(horizontalBias = titleBias, verticalBias = 0f)
+                    ) {
+                        Text(
+                            text = if (title.isBlank()) "Untitled" else title,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.animateContentSize()
                         )
                     }
-                    Button(
-                        onClick = {
-                            handleExit {
-                                onSave(existingGroup.copy(id = existingGroup.id, title = title, tasks = tasks))
-                            }
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.padding(end = 8.dp)
+
+                    // 3. EXPANDABLE ACTIONS
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.End
                     ) {
-                        Text("Save", fontWeight = FontWeight.Bold)
+                        AnimatedVisibility(
+                            visible = isControlsExpanded,
+                            enter = expandHorizontally(expandFrom = Alignment.End) + fadeIn() + slideInHorizontally { it / 2 },
+                            exit = shrinkHorizontally(shrinkTowards = Alignment.End) + fadeOut() + slideOutHorizontally { it / 2 }
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                // PDF BUTTON
+                                IconButton(
+                                    onClick = {
+                                        handleExit {
+                                            val updatedGroup = existingGroup.copy(title = title, tasks = tasks)
+                                            viewModel.setPreviewGroup(updatedGroup)
+                                            onNavigateToPreview(updatedGroup)
+                                        }
+                                    },
+                                    enabled = isPdfEnabled
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.PictureAsPdf,
+                                        contentDescription = "Preview PDF",
+                                        tint = if (isPdfEnabled) MaterialTheme.colorScheme.secondary else Color.Gray.copy(alpha = 0.4f)
+                                    )
+                                }
+
+                                // DELETE BUTTON
+                                IconButton(onClick = { 
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    handleExit { showDeleteDialog = true } 
+                                }) {
+                                    Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
+                                }
+
+                                // SAVE BUTTON
+                                IconButton(onClick = { 
+                                    handleExit { onSave(existingGroup.copy(id = existingGroup.id, title = title, tasks = tasks)) } 
+                                }) {
+                                    Icon(Icons.Default.Save, "Save", tint = MaterialTheme.colorScheme.primary)
+                                }
+                            }
+                        }
+
+                        // 4. TOGGLE BUTTON (Animated icon change)
+                        IconButton(onClick = { isControlsExpanded = !isControlsExpanded }) {
+                            AnimatedContent(
+                                targetState = isControlsExpanded,
+                                transitionSpec = {
+                                    (fadeIn() + scaleIn()).togetherWith(fadeOut() + scaleOut())
+                                },
+                                label = "toggleIcon"
+                            ) { expanded ->
+                                val icon = if (expanded) Icons.Default.KeyboardArrowRight else Icons.Default.KeyboardArrowLeft
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = if (expanded) "Collapse" else "Expand",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
                     }
-                },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = MaterialTheme.colorScheme.onBackground
-                )
-            )
+                }
+            }
         },
         containerColor = MaterialTheme.colorScheme.background,
         floatingActionButton = {
@@ -679,29 +662,6 @@ fun AddTodoScreen(
                             delay(100) // Wait for keyboard and layout adjustments
                             scrollState.animateScrollToItem(0)
                             newTaskToFocusId = null
-                        }
-                    }
-                }
-
-                item(key = "export_pdf_button") {
-                    if (tasks.any { it.text.isNotBlank() }) {
-                        Spacer(Modifier.height(12.dp))
-                        OutlinedButton(
-                            onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
-                                    permissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                                } else {
-                                    showPdfPreview = true
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth().height(56.dp),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.secondary)
-                        ) {
-                            Icon(Icons.Default.PictureAsPdf, contentDescription = "PDF Icon")
-                            Spacer(Modifier.width(8.dp))
-                            Text("Export as PDF")
                         }
                     }
                 }
