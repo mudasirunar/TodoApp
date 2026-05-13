@@ -132,6 +132,7 @@ class MainActivity : AppCompatActivity() {
                                 val currentTheme by viewModel.themeMode.collectAsStateWithLifecycle()
                                 val currentAiStyle by viewModel.aiRewriteType.collectAsStateWithLifecycle()
                                 val currentPdfConfig by viewModel.pdfConfig.collectAsStateWithLifecycle()
+                                val moveDoneToBottom by viewModel.moveDoneToBottom.collectAsStateWithLifecycle()
                                 
                                 SettingsScreen(
                                     currentTheme = currentTheme ?: ThemeMode.SYSTEM,
@@ -140,6 +141,8 @@ class MainActivity : AppCompatActivity() {
                                     onAiStyleSelected = { viewModel.saveAiRewriteType(it) },
                                     currentPdfConfig = currentPdfConfig ?: com.example.mytodoapp.utils.PdfConfig(),
                                     onPdfConfigChange = { viewModel.savePdfConfig(it) },
+                                    moveDoneToBottom = moveDoneToBottom ?: false,
+                                    onMoveDoneToBottomChange = { viewModel.saveMoveDoneToBottom(it) },
                                     onBack = { navController.popBackStack() }
                                 )
                             }

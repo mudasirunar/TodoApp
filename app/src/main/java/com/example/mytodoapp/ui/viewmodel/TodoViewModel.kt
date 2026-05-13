@@ -8,6 +8,8 @@ import com.example.mytodoapp.data.TodoDao
 import com.example.mytodoapp.data.TodoGroup
 import com.example.mytodoapp.data.TodoGroupEntity
 import com.example.mytodoapp.components.RewriteType
+import com.example.mytodoapp.data.TodoStatus
+import com.example.mytodoapp.data.TodoTask
 import com.example.mytodoapp.utils.ThemeMode
 import com.example.mytodoapp.utils.PreferenceManager
 import kotlinx.coroutines.Dispatchers
@@ -58,6 +60,15 @@ class RowHistory(initialText: String) {
     }
 }
 
+enum class SortStrategy(val label: String) {
+    AlphabeticalAsc("Alphabetical (A-Z)"),
+    AlphabeticalDesc("Alphabetical (Z-A)"),
+    NewestFirst("Newest First"),
+    OldestFirst("Oldest First"),
+    FavoritesFirst("Favorites First"),
+    Status("By Status")
+}
+
 class TodoViewModel(
     private val todoDao: TodoDao,
     private val preferenceManager: PreferenceManager
@@ -93,6 +104,9 @@ class TodoViewModel(
     private val _pdfConfig = MutableStateFlow<com.example.mytodoapp.utils.PdfConfig?>(null)
     val pdfConfig: StateFlow<com.example.mytodoapp.utils.PdfConfig?> = _pdfConfig.asStateFlow()
 
+    private val _moveDoneToBottom = MutableStateFlow<Boolean?>(null)
+    val moveDoneToBottom: StateFlow<Boolean?> = _moveDoneToBottom.asStateFlow()
+
     init {
         viewModelScope.launch {
             preferenceManager.themeMode.collect { mode ->
@@ -112,6 +126,13 @@ class TodoViewModel(
             preferenceManager.pdfConfig.collect { config ->
                 if (_pdfConfig.value == null) {
                     _pdfConfig.value = config
+                }
+            }
+        }
+        viewModelScope.launch {
+            preferenceManager.moveDoneToBottom.collect { value ->
+                if (_moveDoneToBottom.value == null) {
+                    _moveDoneToBottom.value = value
                 }
             }
         }
@@ -136,6 +157,30 @@ class TodoViewModel(
         viewModelScope.launch {
             preferenceManager.savePdfConfig(config)
         }
+    }
+
+    fun saveMoveDoneToBottom(value: Boolean) {
+        _moveDoneToBottom.value = value // Instant UI update
+        viewModelScope.launch {
+            preferenceManager.saveMoveDoneToBottom(value)
+        }
+    }
+
+    fun getSortedTasks(tasks: List<TodoTask>, strategy: SortStrategy, moveDoneToBottom: Boolean): List<TodoTask> {
+        var sorted = when (strategy) {
+            SortStrategy.AlphabeticalAsc -> tasks.sortedBy { it.text.lowercase() }
+            SortStrategy.AlphabeticalDesc -> tasks.sortedByDescending { it.text.lowercase() }
+            SortStrategy.NewestFirst -> tasks.sortedByDescending { it.createdAt }
+            SortStrategy.OldestFirst -> tasks.sortedBy { it.createdAt }
+            SortStrategy.FavoritesFirst -> tasks.sortedByDescending { it.isFavorite }
+            SortStrategy.Status -> tasks.sortedBy { it.status.ordinal }
+        }
+
+        if (moveDoneToBottom) {
+            sorted = sorted.sortedWith(compareBy { it.status == TodoStatus.Done })
+        }
+        
+        return sorted
     }
 
     // --- Preview System (Non-persistent) ---

@@ -20,7 +20,8 @@ data class TodoTask(
     val id: String = UUID.randomUUID().toString(),
     val text: String = "",
     val status: TodoStatus = TodoStatus.ComingUp,
-    val isFavorite: Boolean = false
+    val isFavorite: Boolean = false,
+    val createdAt: Long = System.currentTimeMillis()
 ) : Parcelable
 
 @Immutable

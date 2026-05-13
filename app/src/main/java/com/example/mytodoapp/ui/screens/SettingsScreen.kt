@@ -8,6 +8,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
@@ -35,6 +37,8 @@ fun SettingsScreen(
     onAiStyleSelected: (RewriteType) -> Unit,
     currentPdfConfig: com.example.mytodoapp.utils.PdfConfig,
     onPdfConfigChange: (com.example.mytodoapp.utils.PdfConfig) -> Unit,
+    moveDoneToBottom: Boolean,
+    onMoveDoneToBottomChange: (Boolean) -> Unit,
     onBack: () -> Unit
 ) {
     Scaffold(
@@ -58,13 +62,24 @@ fun SettingsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(start = 16.dp, top = padding.calculateTopPadding() + 16.dp, end = 16.dp, bottom = 0.dp)
+                .padding(padding)
+                .padding(horizontal = 16.dp)
+                .verticalScroll(rememberScrollState())
         ) {
+            Spacer(modifier = Modifier.height(16.dp))
+
             ThemeSection(
                 currentTheme = currentTheme,
                 onThemeSelected = onThemeSelected
             )
             
+            Spacer(modifier = Modifier.height(32.dp))
+
+            TaskOrganizationSection(
+                moveDoneToBottom = moveDoneToBottom,
+                onMoveDoneToBottomChange = onMoveDoneToBottomChange
+            )
+
             Spacer(modifier = Modifier.height(32.dp))
 
             AiStyleSection(
@@ -79,9 +94,75 @@ fun SettingsScreen(
                 onConfigChange = onPdfConfigChange
             )
             
-            Spacer(modifier = Modifier.weight(1f))
+            Spacer(modifier = Modifier.height(48.dp))
             
             AppBrandingFooter()
+        }
+    }
+}
+
+@Composable
+fun TaskOrganizationSection(
+    moveDoneToBottom: Boolean,
+    onMoveDoneToBottomChange: (Boolean) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "Task Organization",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+
+        Text(
+            text = "Control how your tasks are displayed.",
+            fontSize = 14.sp,
+            color = Color.Gray,
+            modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
+        )
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+            ),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onMoveDoneToBottomChange(!moveDoneToBottom) }
+                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Move done tasks to bottom",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Automatically pushes completed tasks to the end of the list.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.Gray
+                    )
+                }
+
+                Switch(
+                    checked = moveDoneToBottom,
+                    onCheckedChange = { onMoveDoneToBottomChange(it) },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                        checkedTrackColor = MaterialTheme.colorScheme.primary,
+                        uncheckedThumbColor = MaterialTheme.colorScheme.outline,
+                        uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+                        checkedIconColor = MaterialTheme.colorScheme.primary,
+                        uncheckedIconColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                )
+            }
         }
     }
 }
@@ -372,8 +453,7 @@ fun AppBrandingFooter() {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(bottom = 12.dp),
+            .navigationBarsPadding(),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {

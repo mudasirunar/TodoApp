@@ -1,6 +1,7 @@
 package com.example.mytodoapp.ui.screens
 
 import android.os.Build
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
@@ -120,8 +121,13 @@ fun AddTodoScreen(
     val globalPdfConfigState by viewModel.pdfConfig.collectAsStateWithLifecycle()
     val globalPdfConfig = globalPdfConfigState ?: com.example.mytodoapp.utils.PdfConfig()
 
+    // Collect global MoveDoneToBottom from settings
+    val moveDoneToBottomState by viewModel.moveDoneToBottom.collectAsStateWithLifecycle()
+    val moveDoneToBottom = moveDoneToBottomState ?: false
+
     // ✅ UI STATE FOR OVERFLOW MENU
     var showMenu by remember { mutableStateOf(false) }
+    var showSortMenu by remember { mutableStateOf(false) }
     
     // ✅ UI STATE FOR EXPORT DIALOG
     var showExportDialog by rememberSaveable { mutableStateOf(false) }
@@ -162,6 +168,39 @@ fun AddTodoScreen(
         )
     }
 
+    val scope = rememberCoroutineScope()
+    
+    // ✅ OPTIMIZATION 5: Initialize all focus requesters once
+    val focusMap = remember {
+        mutableStateMapOf<String, FocusRequester>().apply {
+            tasks.forEach { task ->
+                this[task.id] = FocusRequester()
+            }
+        }
+    }
+
+    // Function to scroll to focused item if it moves
+    val scrollToFocusedItem = {
+        scope.launch {
+            delay(100)
+            val focusedIndex = tasks.indexOfFirst { focusMap[it.id]?.toString()?.contains("true") == true }
+            if (focusedIndex != -1) {
+                scrollState.animateScrollToItem(focusedIndex + 2)
+            }
+        }
+    }
+
+    // Apply "Move Done to Bottom" when it's enabled and tasks change
+    LaunchedEffect(tasks, moveDoneToBottom) {
+        if (moveDoneToBottom) {
+            val sorted = tasks.sortedWith(compareBy { it.status == TodoStatus.Done })
+            if (sorted != tasks) {
+                tasks = sorted
+                scrollToFocusedItem()
+            }
+        }
+    }
+
     val isPdfEnabled = remember(tasks) { tasks.any { it.text.isNotBlank() } }
 
     var showBackDialog by rememberSaveable { mutableStateOf(false) }
@@ -173,15 +212,6 @@ fun AddTodoScreen(
     val aiErrors = remember { mutableStateMapOf<String, String>() }
     val aiRewriteTypes = remember { mutableStateMapOf<String, RewriteType>() }
     var taskForAiDialog by remember { mutableStateOf<String?>(null) }
-
-    // ✅ OPTIMIZATION 5: Initialize all focus requesters once
-    val focusMap = remember {
-        mutableStateMapOf<String, FocusRequester>().apply {
-            tasks.forEach { task ->
-                this[task.id] = FocusRequester()
-            }
-        }
-    }
 
     LaunchedEffect(highlightQuery) {
         val trimmed = highlightQuery.trim()
@@ -211,7 +241,6 @@ fun AddTodoScreen(
     var newTaskToFocusId by remember { mutableStateOf<String?>(null) }
     var previousTasksSize by remember { mutableStateOf(tasks.size) }
     var shakingTaskId by remember { mutableStateOf<Pair<String, Long>?>(null) }
-    val scope = rememberCoroutineScope()
 
     LaunchedEffect(shakingTaskId) {
         if (shakingTaskId != null) {
@@ -325,7 +354,26 @@ fun AddTodoScreen(
                             shape = RoundedCornerShape(16.dp)
                         ) {
                             DropdownMenuItem(
-                                text = { Text("Preview PDF", color = if (isPdfEnabled) MaterialTheme.colorScheme.secondary else Color.Gray.copy(alpha = 0.4f)) },
+                                text = { 
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("Sort Tasks", modifier = Modifier.weight(1f))
+                                        Icon(Icons.Default.ArrowRight, null, modifier = Modifier.size(20.dp))
+                                    }
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    showSortMenu = true
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Sort,
+                                        contentDescription = "Sort",
+                                        tint = Color(0xFF4CAF50) // Green for organization
+                                    )
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Preview PDF") },
                                 onClick = {
                                     showMenu = false
                                     handleExit {
@@ -338,13 +386,13 @@ fun AddTodoScreen(
                                     Icon(
                                         imageVector = Icons.Default.PictureAsPdf,
                                         contentDescription = "Preview PDF",
-                                        tint = if (isPdfEnabled) MaterialTheme.colorScheme.secondary else Color.Gray.copy(alpha = 0.4f)
+                                        tint = Color(0xFF2196F3) // Blue
                                     )
                                 },
                                 enabled = isPdfEnabled
                             )
                             DropdownMenuItem(
-                                text = { Text("Share/Export", color = if (isPdfEnabled) MaterialTheme.colorScheme.primary else Color.Gray.copy(alpha = 0.4f)) },
+                                text = { Text("Share/Export") },
                                 onClick = {
                                     showMenu = false
                                     handleExit { showExportDialog = true }
@@ -353,31 +401,58 @@ fun AddTodoScreen(
                                     Icon(
                                         imageVector = Icons.Default.Share,
                                         contentDescription = "Export as PDF",
-                                        tint = if (isPdfEnabled) MaterialTheme.colorScheme.primary else Color.Gray.copy(alpha = 0.4f)
+                                        tint = Color(0xFF00BCD4) // Cyan/Blueish for Export
                                     )
                                 },
                                 enabled = isPdfEnabled
                             )
                             DropdownMenuItem(
-                                text = { Text("Save", color = MaterialTheme.colorScheme.primary) },
+                                text = { Text("Save") },
                                 onClick = {
                                     showMenu = false
                                     handleExit { onSave(existingGroup.copy(id = existingGroup.id, title = title, tasks = tasks)) } 
                                 },
                                 leadingIcon = {
-                                    Icon(Icons.Default.Save, contentDescription = "Save", tint = MaterialTheme.colorScheme.primary)
+                                    Icon(
+                                        Icons.Default.Save, 
+                                        contentDescription = "Save", 
+                                        tint = Color(0xFF9C27B0) // Purple
+                                    )
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                                text = { Text("Delete", color = Color(0xFFF44336)) },
                                 onClick = {
                                     showMenu = false
                                     handleExit { showDeleteDialog = true }
                                 },
                                 leadingIcon = {
-                                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
+                                    Icon(
+                                        Icons.Default.Delete, 
+                                        contentDescription = "Delete", 
+                                        tint = Color(0xFFF44336) // Red
+                                    )
                                 }
                             )
+                        }
+
+                        // SORT SUBMENU
+                        DropdownMenu(
+                            expanded = showSortMenu,
+                            onDismissRequest = { showSortMenu = false },
+                            modifier = Modifier.width(220.dp),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            com.example.mytodoapp.ui.viewmodel.SortStrategy.entries.forEach { strategy ->
+                                DropdownMenuItem(
+                                    text = { Text(strategy.label) },
+                                    onClick = {
+                                        showSortMenu = false
+                                        tasks = viewModel.getSortedTasks(tasks, strategy, moveDoneToBottom)
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -545,6 +620,7 @@ fun AddTodoScreen(
                         highlightQuery = highlightQuery,
                         isHighlightActive = isHighlightVisible,
                         bounceOffsetProvider = bounceProvider,
+                        moveDoneToBottom = moveDoneToBottom,
                         isShaking = shakingTaskId?.first == task.id,
                         isLoading = aiLoadingStates[task.id] ?: false,
                         error = aiErrors[task.id],
@@ -593,43 +669,60 @@ fun AddTodoScreen(
                             }
                         },
                         onMoveUp = {
-                            val currentIndex = tasks.indexOfFirst { it.id == task.id }
-                            if (currentIndex > 0) {
-                                val mutableTasks = tasks.toMutableList()
-                                val item = mutableTasks.removeAt(currentIndex)
-                                mutableTasks.add(currentIndex - 1, item)
-                                tasks = mutableTasks.toList()
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            if (moveDoneToBottom && task.status == TodoStatus.Done) {
+                                Toast.makeText(context, "Can't move up: 'Done' tasks stay at the bottom", Toast.LENGTH_SHORT).show()
+                            } else {
+                                val currentIndex = tasks.indexOfFirst { it.id == task.id }
+                                if (currentIndex > 0) {
+                                    val mutableTasks = tasks.toMutableList()
+                                    val item = mutableTasks.removeAt(currentIndex)
+                                    mutableTasks.add(currentIndex - 1, item)
+                                    tasks = mutableTasks.toList()
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                }
                             }
                         },
                         onMoveToTop = {
-                            val currentIndex = tasks.indexOfFirst { it.id == task.id }
-                            if (currentIndex > 0) {
-                                val mutableTasks = tasks.toMutableList()
-                                val item = mutableTasks.removeAt(currentIndex)
-                                mutableTasks.add(0, item)
-                                tasks = mutableTasks.toList()
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            if (moveDoneToBottom && task.status == TodoStatus.Done) {
+                                android.widget.Toast.makeText(context, "Can't move to top: 'Done' tasks stay at the bottom", android.widget.Toast.LENGTH_SHORT).show()
+                            } else {
+                                val currentIndex = tasks.indexOfFirst { it.id == task.id }
+                                if (currentIndex > 0) {
+                                    val mutableTasks = tasks.toMutableList()
+                                    val item = mutableTasks.removeAt(currentIndex)
+                                    mutableTasks.add(0, item)
+                                    tasks = mutableTasks.toList()
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                }
                             }
                         },
                         onMoveDown = {
                             val currentIndex = tasks.indexOfFirst { it.id == task.id }
-                            if (currentIndex < tasks.size - 1) {
-                                val mutableTasks = tasks.toMutableList()
-                                val item = mutableTasks.removeAt(currentIndex)
-                                mutableTasks.add(currentIndex + 1, item)
-                                tasks = mutableTasks.toList()
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            if (moveDoneToBottom && task.status != TodoStatus.Done && 
+                                currentIndex < tasks.size - 1 && tasks[currentIndex + 1].status == TodoStatus.Done) {
+                                Toast.makeText(context, "Can't move below 'Done' tasks", Toast.LENGTH_SHORT).show()
+                            } else {
+                                if (currentIndex < tasks.size - 1) {
+                                    val mutableTasks = tasks.toMutableList()
+                                    val item = mutableTasks.removeAt(currentIndex)
+                                    mutableTasks.add(currentIndex + 1, item)
+                                    tasks = mutableTasks.toList()
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                }
                             }
                         },
                         onMoveToBottom = {
                             val currentIndex = tasks.indexOfFirst { it.id == task.id }
-                            if (currentIndex < tasks.size - 1) {
-                                val mutableTasks = tasks.toMutableList()
-                                val item = mutableTasks.removeAt(currentIndex)
-                                mutableTasks.add(item)
-                                tasks = mutableTasks.toList()
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            if (moveDoneToBottom && task.status != TodoStatus.Done) {
+                                Toast.makeText(context, "Only 'Done' tasks stay at the very bottom", Toast.LENGTH_SHORT).show()
+                            } else {
+                                if (currentIndex < tasks.size - 1) {
+                                    val mutableTasks = tasks.toMutableList()
+                                    val item = mutableTasks.removeAt(currentIndex)
+                                    mutableTasks.add(item)
+                                    tasks = mutableTasks.toList()
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                }
                             }
                         },
                         onImeAction = {
@@ -776,6 +869,7 @@ fun TaskEditRow(
     highlightQuery: String,
     isHighlightActive: Boolean,
     bounceOffsetProvider: () -> Float,
+    moveDoneToBottom: Boolean,
     isShaking: Boolean = false,
     isLoading: Boolean = false,
     error: String? = null,
@@ -800,6 +894,7 @@ fun TaskEditRow(
     onClearError: (String) -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
+    val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
     val dismissState = rememberSwipeToDismissBoxState()
     val currentValue = dismissState.currentValue
@@ -1182,7 +1277,12 @@ fun TaskEditRow(
 
                             StatusSelector(
                                 currentStatus = task.status,
-                                onStatusChange = { newStatus -> onUpdate(task.copy(status = newStatus)) }
+                                onStatusChange = { newStatus -> 
+                                    if (moveDoneToBottom && newStatus == TodoStatus.Done) {
+                                        focusManager.clearFocus()
+                                    }
+                                    onUpdate(task.copy(status = newStatus)) 
+                                }
                             )
 
                             Spacer(modifier = Modifier.width(8.dp))

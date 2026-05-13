@@ -31,6 +31,7 @@ class PreferenceManager(private val context: Context) {
         val AI_REWRITE_TYPE_KEY = stringPreferencesKey("ai_rewrite_type")
         val PDF_INCLUDE_STATUS_KEY = booleanPreferencesKey("pdf_include_status")
         val PDF_INCLUDE_FAVORITES_KEY = booleanPreferencesKey("pdf_include_favorites")
+        val MOVE_DONE_TO_BOTTOM_KEY = booleanPreferencesKey("move_done_to_bottom")
     }
 
     val themeMode: Flow<ThemeMode> = context.dataStore.data.map { preferences ->
@@ -58,6 +59,10 @@ class PreferenceManager(private val context: Context) {
         )
     }
 
+    val moveDoneToBottom: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[MOVE_DONE_TO_BOTTOM_KEY] ?: false
+    }
+
     suspend fun saveThemeMode(mode: ThemeMode) {
         context.dataStore.edit { preferences ->
             preferences[THEME_MODE_KEY] = mode.name
@@ -74,6 +79,12 @@ class PreferenceManager(private val context: Context) {
         context.dataStore.edit { preferences ->
             preferences[PDF_INCLUDE_STATUS_KEY] = config.includeStatus
             preferences[PDF_INCLUDE_FAVORITES_KEY] = config.includeFavorites
+        }
+    }
+
+    suspend fun saveMoveDoneToBottom(value: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[MOVE_DONE_TO_BOTTOM_KEY] = value
         }
     }
 }
