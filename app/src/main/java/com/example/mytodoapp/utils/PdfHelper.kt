@@ -71,6 +71,23 @@ object PdfHelper {
             y += rowHeight + 2f // Add small gap
         }
 
+        // --- ADD SUMMARY TABLE ---
+        if (config.includeSummary && (config.includeStatus || config.includeFavorites)) {
+            val summaryHeight = (if (config.includeStatus) 3 * 18f else 0f) + (if (config.includeFavorites) 18f else 0f) + 60f
+            
+            // Multi-page Check for Summary
+            if (y + summaryHeight > 800f) {
+                pdfDocument.finishPage(page)
+                currentPageNumber++
+                pageInfo = PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, currentPageNumber).create()
+                page = pdfDocument.startPage(pageInfo)
+                canvas = page.canvas
+                y = 50f
+            }
+            
+            drawSummaryTable(canvas, y, validTasks, config)
+        }
+
         pdfDocument.finishPage(page)
 
         try {
@@ -83,6 +100,62 @@ object PdfHelper {
     }
 
     // --- Drawing Components (Reusable for Preview) ---
+
+    private fun drawSummaryTable(canvas: Canvas, y: Float, tasks: List<TodoTask>, config: PdfConfig) {
+        var currentY = y + 35f // Space from last row
+        
+        // Section Title
+        canvas.drawText("Summary", COL_SR, currentY, headerPaint)
+        currentY += 10f
+        
+        // Minimalist Divider
+        val dividerPaint = Paint().apply {
+            color = Color.parseColor("#CCCCCC")
+            strokeWidth = 1f
+        }
+        canvas.drawLine(COL_SR, currentY, COL_SR + 120f, currentY, dividerPaint)
+        currentY += 22f
+
+        val labelPaint = Paint().apply {
+            textSize = 11f
+            color = Color.parseColor("#444444")
+            isAntiAlias = true
+        }
+
+        if (config.includeStatus) {
+            // Sorted to match user request: Done, Ongoing, Coming Up (Pending)
+            val sortedStatuses = listOf(com.example.mytodoapp.data.TodoStatus.Done, com.example.mytodoapp.data.TodoStatus.Ongoing, com.example.mytodoapp.data.TodoStatus.ComingUp)
+            sortedStatuses.forEach { status ->
+                val count = tasks.count { it.status == status }
+                val label = if (status == com.example.mytodoapp.data.TodoStatus.ComingUp) "Pending" else status.label
+                
+                canvas.drawText("$label:", COL_SR, currentY, labelPaint)
+                
+                val countPaint = Paint().apply {
+                    textSize = 11f
+                    isFakeBoldText = true
+                    color = status.color.toArgb()
+                    isAntiAlias = true
+                }
+                canvas.drawText("$count", COL_SR + 80f, currentY, countPaint)
+                currentY += 18f
+            }
+        }
+
+        if (config.includeFavorites) {
+            val favCount = tasks.count { it.isFavorite }
+            canvas.drawText("Favorites:", COL_SR, currentY, labelPaint)
+            
+            val favCountPaint = Paint().apply {
+                textSize = 11f
+                isFakeBoldText = true
+                color = Color.parseColor("#FFB300") // Polished Amber/Gold
+                isAntiAlias = true
+            }
+            canvas.drawText("$favCount", COL_SR + 80f, currentY, favCountPaint)
+            currentY += 18f
+        }
+    }
 
     private val titlePaint = Paint().apply {
         textSize = 24f

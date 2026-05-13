@@ -19,7 +19,8 @@ enum class ThemeMode {
 
 data class PdfConfig(
     val includeStatus: Boolean = true,
-    val includeFavorites: Boolean = true
+    val includeFavorites: Boolean = true,
+    val includeSummary: Boolean = true
 )
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings_prefs")
@@ -31,6 +32,7 @@ class PreferenceManager(private val context: Context) {
         val AI_REWRITE_TYPE_KEY = stringPreferencesKey("ai_rewrite_type")
         val PDF_INCLUDE_STATUS_KEY = booleanPreferencesKey("pdf_include_status")
         val PDF_INCLUDE_FAVORITES_KEY = booleanPreferencesKey("pdf_include_favorites")
+        val PDF_INCLUDE_SUMMARY_KEY = booleanPreferencesKey("pdf_include_summary")
         val MOVE_DONE_TO_BOTTOM_KEY = booleanPreferencesKey("move_done_to_bottom")
     }
 
@@ -55,7 +57,8 @@ class PreferenceManager(private val context: Context) {
     val pdfConfig: Flow<PdfConfig> = context.dataStore.data.map { preferences ->
         PdfConfig(
             includeStatus = preferences[PDF_INCLUDE_STATUS_KEY] ?: true,
-            includeFavorites = preferences[PDF_INCLUDE_FAVORITES_KEY] ?: true
+            includeFavorites = preferences[PDF_INCLUDE_FAVORITES_KEY] ?: true,
+            includeSummary = preferences[PDF_INCLUDE_SUMMARY_KEY] ?: true
         )
     }
 
@@ -79,6 +82,7 @@ class PreferenceManager(private val context: Context) {
         context.dataStore.edit { preferences ->
             preferences[PDF_INCLUDE_STATUS_KEY] = config.includeStatus
             preferences[PDF_INCLUDE_FAVORITES_KEY] = config.includeFavorites
+            preferences[PDF_INCLUDE_SUMMARY_KEY] = config.includeSummary
         }
     }
 

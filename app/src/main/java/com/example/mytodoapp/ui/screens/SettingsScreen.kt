@@ -5,6 +5,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -16,6 +17,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -181,7 +183,7 @@ fun PdfConfigSection(
         )
 
         Text(
-            text = "Select which columns to include in the PDF.",
+            text = "Configure details for your exported PDF documents.",
             fontSize = 14.sp,
             color = Color.Gray,
             modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
@@ -196,101 +198,123 @@ fun PdfConfigSection(
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
         ) {
             Column(modifier = Modifier.padding(vertical = 8.dp)) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(
-                            interactionSource = androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                            indication = null
-                        ) { onConfigChange(currentConfig.copy(includeStatus = !currentConfig.includeStatus)) }
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Status", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-                    }
-                    val isStatusSelected = currentConfig.includeStatus
-                    Box(
-                        modifier = Modifier
-                            .size(24.dp)
-                            .clip(CircleShape)
-                            .background(
-                                if (isStatusSelected) MaterialTheme.colorScheme.primary 
-                                else Color.Transparent
-                            )
-                            .border(
-                                width = 2.dp,
-                                color = if (isStatusSelected) MaterialTheme.colorScheme.primary 
-                                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
-                                shape = CircleShape
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        androidx.compose.animation.AnimatedVisibility(
-                            visible = isStatusSelected,
-                            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(),
-                            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut()
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    }
-                }
+                // SECTION 1: COLUMNS
+                Text(
+                    text = "Include Columns",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 4.dp)
+                )
+
+                PdfOptionRow(
+                    label = "Status",
+                    selected = currentConfig.includeStatus,
+                    onClick = { onConfigChange(currentConfig.copy(includeStatus = !currentConfig.includeStatus)) }
+                )
+
+                PdfOptionRow(
+                    label = "Favorite",
+                    selected = currentConfig.includeFavorites,
+                    onClick = { onConfigChange(currentConfig.copy(includeFavorites = !currentConfig.includeFavorites)) }
+                )
 
                 HorizontalDivider(
-                    modifier = Modifier.padding(horizontal = 16.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     thickness = 0.5.dp,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+                )
+
+                // SECTION 2: ADDITIONAL DETAILS
+                Text(
+                    text = "Additional Details",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 16.dp, top = 4.dp, end = 16.dp, bottom = 4.dp)
                 )
 
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable(
-                            interactionSource = androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                            indication = null
-                        ) { onConfigChange(currentConfig.copy(includeFavorites = !currentConfig.includeFavorites)) }
+                        .clickable { onConfigChange(currentConfig.copy(includeSummary = !currentConfig.includeSummary)) }
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Favorites", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                        Text(
+                            text = "Include Summary Table",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "Adds counts of statuses and favorites.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.Gray
+                        )
                     }
-                    val isFavoritesSelected = currentConfig.includeFavorites
-                    Box(
-                        modifier = Modifier
-                            .size(24.dp)
-                            .clip(CircleShape)
-                            .background(
-                                if (isFavoritesSelected) MaterialTheme.colorScheme.primary 
-                                else Color.Transparent
-                            )
-                            .border(
-                                width = 2.dp,
-                                color = if (isFavoritesSelected) MaterialTheme.colorScheme.primary 
-                                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
-                                shape = CircleShape
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        androidx.compose.animation.AnimatedVisibility(
-                            visible = isFavoritesSelected,
-                            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(),
-                            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut()
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    }
+
+                    Switch(
+                        checked = currentConfig.includeSummary,
+                        onCheckedChange = { onConfigChange(currentConfig.copy(includeSummary = it)) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                            checkedTrackColor = MaterialTheme.colorScheme.primary
+                        )
+                    )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PdfOptionRow(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) { onClick() }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+        }
+        
+        Box(
+            modifier = Modifier
+                .size(24.dp)
+                .clip(CircleShape)
+                .background(
+                    if (selected) MaterialTheme.colorScheme.primary 
+                    else Color.Transparent
+                )
+                .border(
+                    width = 2.dp,
+                    color = if (selected) MaterialTheme.colorScheme.primary 
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                    shape = CircleShape
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            androidx.compose.animation.AnimatedVisibility(
+                visible = selected,
+                enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(),
+                exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.size(16.dp)
+                )
             }
         }
     }
