@@ -277,7 +277,7 @@ fun DashboardScreen(
                                         modifier = Modifier.size(24.dp)
                                     )
                                 }
-                                Text("My Workspace", fontWeight = FontWeight.ExtraBold)
+                                Text("My Workspace", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
                             }
                         }
                     }

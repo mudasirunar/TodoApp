@@ -134,7 +134,7 @@ fun PdfPreviewScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Preview", fontWeight = FontWeight.ExtraBold) },
+                title = { Text("Preview", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
