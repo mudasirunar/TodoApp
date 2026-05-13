@@ -610,11 +610,12 @@ fun AddTodoScreen(
                             }
                         },
                         onMoveUp = {
-                            if (moveDoneToBottom && task.status == TodoStatus.Done) {
-                                Toast.makeText(context, "Can't move up: 'Done' tasks stay at the bottom", Toast.LENGTH_SHORT).show()
-                            } else {
-                                val currentIndex = tasks.indexOfFirst { it.id == task.id }
-                                if (currentIndex > 0) {
+                            val currentIndex = tasks.indexOfFirst { it.id == task.id }
+                            if (currentIndex > 0) {
+                                val taskAbove = tasks[currentIndex - 1]
+                                if (moveDoneToBottom && task.status == TodoStatus.Done && taskAbove.status != TodoStatus.Done) {
+                                    Toast.makeText(context, "Can't move up: 'Done' tasks stay at the bottom", Toast.LENGTH_SHORT).show()
+                                } else {
                                     val mutableTasks = tasks.toMutableList()
                                     val item = mutableTasks.removeAt(currentIndex)
                                     mutableTasks.add(currentIndex - 1, item)
