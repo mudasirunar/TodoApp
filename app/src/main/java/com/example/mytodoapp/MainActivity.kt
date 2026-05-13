@@ -212,11 +212,6 @@ class MainActivity : AppCompatActivity() {
                                     existingGroup = existing,
                                     highlightQuery = query,
                                     viewModel = viewModel,
-                                    onSave = { updated ->
-                                        viewModel.insertGroup(updated)
-                                        viewModel.clearHistory()
-                                        navController.popBackStack()
-                                    },
                                     onBack = {
                                         viewModel.clearHistory()
                                         navController.popBackStack()
@@ -230,11 +225,10 @@ class MainActivity : AppCompatActivity() {
                                         navController.popBackStack()
                                     },
                                     onNavigateToPreview = { unsavedGroup ->
-                                        // ✅ SHARE VIA VIEWMODEL
+                                        viewModel.forceImmediateSave()
                                         viewModel.setPreviewGroup(unsavedGroup)
                                         navController.navigate("pdf_preview/${unsavedGroup.id}")
                                     }
-
                                 )
                             }
                     }

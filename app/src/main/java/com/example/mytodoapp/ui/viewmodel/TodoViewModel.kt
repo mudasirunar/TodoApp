@@ -235,6 +235,45 @@ class TodoViewModel(
         canRedoMap.clear()
     }
 
+    // --- Auto-Save System ---
+    private var saveJob: kotlinx.coroutines.Job? = null
+    private val _currentEditGroup = MutableStateFlow<TodoGroup?>(null)
+
+    fun updateCurrentGroup(group: TodoGroup) {
+        if (_currentEditGroup.value == group) return
+        _currentEditGroup.value = group
+        
+        saveJob?.cancel()
+        saveJob = viewModelScope.launch(Dispatchers.IO) {
+            kotlinx.coroutines.delay(400) // 400ms debounce
+            saveGroupToDb(group)
+        }
+    }
+
+    fun forceImmediateSave() {
+        saveJob?.cancel()
+        _currentEditGroup.value?.let { group ->
+            viewModelScope.launch(Dispatchers.IO) {
+                saveGroupToDb(group)
+            }
+        }
+    }
+
+    private suspend fun saveGroupToDb(group: TodoGroup) {
+        // Prevent saving completely empty and newly opened unpinned documents
+        if (group.title.isBlank() && group.tasks.size == 1 && group.tasks[0].text.isBlank() && !group.isPinned) return
+
+        todoDao.insertGroup(
+            TodoGroupEntity(
+                id = group.id,
+                title = group.title,
+                tasks = group.tasks,
+                createdAt = group.createdAt,
+                isPinned = group.isPinned
+            )
+        )
+    }
+
     fun insertGroup(group: TodoGroup) {
         viewModelScope.launch(Dispatchers.IO) {
             todoDao.insertGroup(

@@ -55,11 +55,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.Popup
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.mytodoapp.components.ExportPdfDialog
 import com.example.mytodoapp.data.TodoGroup
 import com.example.mytodoapp.data.TodoStatus
 import com.example.mytodoapp.data.TodoTask
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.mytodoapp.components.ExportPdfDialog
 import com.example.mytodoapp.ui.viewmodel.TodoViewModel
 import com.example.mytodoapp.utils.AiHelper
 import com.example.mytodoapp.components.AiRewriteOptionsDialog
@@ -100,7 +103,6 @@ fun AddTodoScreen(
     existingGroup: TodoGroup,
     highlightQuery: String = "",
     viewModel: TodoViewModel,
-    onSave: (TodoGroup) -> Unit,
     onBack: () -> Unit,
     onDelete: () -> Unit,
     onNavigateToPreview: (TodoGroup) -> Unit
@@ -155,10 +157,6 @@ fun AddTodoScreen(
         label = "bounceValue"
     )
     val bounceProvider = remember(bounceOffsetState) { { bounceOffsetState.value } }
-
-    val initialState = remember(existingGroup.id) {
-        existingGroup.copy(tasks = existingGroup.tasks.map { it.copy() })
-    }
     
     // ✅ OPTIMIZATION 4: Use custom saver instead of Gson
     var title by rememberSaveable { mutableStateOf(existingGroup.title) }
@@ -166,6 +164,26 @@ fun AddTodoScreen(
         mutableStateOf(
             if (existingGroup.tasks.isEmpty()) listOf(TodoTask()) else existingGroup.tasks
         )
+    }
+
+    // ✅ AUTO-SAVE: Debounced UI-to-ViewModel synchronization
+    LaunchedEffect(title, tasks) {
+        viewModel.updateCurrentGroup(existingGroup.copy(title = title, tasks = tasks))
+    }
+
+    // ✅ AUTO-SAVE: Lifecycle listener for immediate save on exit/background
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) {
+                viewModel.forceImmediateSave()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            viewModel.forceImmediateSave()
+        }
     }
 
     val scope = rememberCoroutineScope()
@@ -203,7 +221,6 @@ fun AddTodoScreen(
 
     val isPdfEnabled = remember(tasks) { tasks.any { it.text.isNotBlank() } }
 
-    var showBackDialog by rememberSaveable { mutableStateOf(false) }
     var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
 
     // AI Rewrite States
@@ -260,33 +277,13 @@ fun AddTodoScreen(
         previousTasksSize = tasks.size
     }
 
-    // ✅ OPTIMIZATION 6: Use derivedStateOf for hasChanges (only recalculates when dependencies change)
-    val hasChanges by remember {
-        derivedStateOf {
-            val tasksAreEqual = areTasksEqual(tasks, initialState.tasks)
-            val tasksAreEffectivelyEqual = if (!tasksAreEqual) {
-                val emptyTasks = initialState.tasks.isEmpty()
-                val singleDefaultTask = tasks.size == 1 && isEmptyDefaultTask(tasks[0])
-                val singleDefaultTaskInInitial = initialState.tasks.size == 1 && isEmptyDefaultTask(initialState.tasks[0])
-                (emptyTasks && singleDefaultTask) || (tasks.isEmpty() && singleDefaultTaskInInitial)
-            } else {
-                true
-            }
-            (title != initialState.title) || !tasksAreEffectivelyEqual
-        }
-    }
-
     val handleExit = { action: () -> Unit ->
         focusManager.clearFocus()
         action()
     }
 
     val onNavigateBack = {
-        if (hasChanges) {
-            showBackDialog = true
-        } else {
-            handleExit(onBack)
-        }
+        handleExit(onBack)
     }
 
     BackHandler(enabled = true) { onNavigateBack() }
@@ -329,8 +326,8 @@ fun AddTodoScreen(
                     ) {
                         Text(
                             text = title.ifBlank { "Untitled" },
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.ExtraBold,
                             color = MaterialTheme.colorScheme.primary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -405,20 +402,6 @@ fun AddTodoScreen(
                                     )
                                 },
                                 enabled = isPdfEnabled
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Save") },
-                                onClick = {
-                                    showMenu = false
-                                    handleExit { onSave(existingGroup.copy(id = existingGroup.id, title = title, tasks = tasks)) } 
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        Icons.Default.Save, 
-                                        contentDescription = "Save", 
-                                        tint = Color(0xFF9C27B0) // Purple
-                                    )
-                                }
                             )
                             DropdownMenuItem(
                                 text = { Text("Delete", color = Color(0xFFF44336)) },
@@ -502,45 +485,6 @@ fun AddTodoScreen(
             )
         }
 
-        if (showBackDialog) {
-            AlertDialog(
-                onDismissRequest = {
-                    showBackDialog = false
-                },
-                properties = DialogProperties(
-                    dismissOnBackPress = true,
-                    dismissOnClickOutside = true
-                ),
-                title = { Text("Unsaved Changes", fontWeight = FontWeight.Bold) },
-                text = { Text("You have made changes. Do you want to save them before leaving?") },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            showBackDialog = false
-                            onSave(existingGroup.copy(title = title, tasks = tasks))
-                        }
-                    ) { Text("Save") }
-                },
-                dismissButton = {
-                    Row {
-                        TextButton(
-                            onClick = {
-                                showBackDialog = false
-                                onBack()
-                            }
-                        ) {
-                            Text("Discard", color = MaterialTheme.colorScheme.error)
-                        }
-
-                        TextButton(
-                            onClick = { showBackDialog = false }
-                        ) {
-                            Text("Cancel")
-                        }
-                    }
-                }
-            )
-        }
         Column(
             modifier = Modifier
                 .padding(padding)
@@ -555,11 +499,8 @@ fun AddTodoScreen(
                 contentPadding = PaddingValues(top = 16.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // ✅ OPTIMIZATION 7: Add stable key to prevent unnecessary recomposition
+                //  Add stable key to prevent unnecessary recomposition
                 item(key = "title_field") {
-                    val isTitleMatch = isHighlightVisible &&
-                            title.contains(highlightQuery, ignoreCase = true)
-
                     OutlinedTextField(
                         value = title,
                         onValueChange = { title = it },
@@ -597,7 +538,7 @@ fun AddTodoScreen(
                     )
                 }
 
-                // ✅ OPTIMIZATION 8: Extract to separate composable to isolate recomposition
+                //  Extract to separate composable to isolate recomposition
                 item(key = "tasks_header") {
                     Spacer(modifier = Modifier.height(24.dp))
                     TasksHeaderSection(
@@ -614,7 +555,7 @@ fun AddTodoScreen(
                 { index, task ->
                     val currentRequester = remember(task.id) { focusMap[task.id] ?: FocusRequester() }
 
-                    // ✅ OPTIMIZATION 9: Isolated task row for better recomposition
+                    // Isolated task row for better recomposition
                     TaskEditRow(
                         task = task,
                         highlightQuery = highlightQuery,
@@ -684,7 +625,7 @@ fun AddTodoScreen(
                         },
                         onMoveToTop = {
                             if (moveDoneToBottom && task.status == TodoStatus.Done) {
-                                android.widget.Toast.makeText(context, "Can't move to top: 'Done' tasks stay at the bottom", android.widget.Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Can't move to top: 'Done' tasks stay at the bottom", android.widget.Toast.LENGTH_SHORT).show()
                             } else {
                                 val currentIndex = tasks.indexOfFirst { it.id == task.id }
                                 if (currentIndex > 0) {
@@ -845,20 +786,6 @@ private fun TasksHeaderSection(
                 tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
             )
         }
-    }
-}
-
-fun isEmptyDefaultTask(task: TodoTask): Boolean {
-    return task.text.isBlank() && task.status == TodoStatus.ComingUp && !task.isFavorite
-}
-
-fun areTasksEqual(tasks1: List<TodoTask>, tasks2: List<TodoTask>): Boolean {
-    if (tasks1.size != tasks2.size) return false
-    return tasks1.zip(tasks2).all { (t1, t2) ->
-        t1.id == t2.id &&
-                t1.text == t2.text &&
-                t1.status == t2.status &&
-                t1.isFavorite == t2.isFavorite
     }
 }
 
