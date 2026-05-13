@@ -7,7 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.mytodoapp.data.TodoDao
 import com.example.mytodoapp.data.TodoGroup
 import com.example.mytodoapp.data.TodoGroupEntity
-import com.example.mytodoapp.utils.RewriteType
+import com.example.mytodoapp.components.RewriteType
 import com.example.mytodoapp.utils.ThemeMode
 import com.example.mytodoapp.utils.PreferenceManager
 import kotlinx.coroutines.Dispatchers
@@ -89,6 +89,9 @@ class TodoViewModel(
 
     private val _aiRewriteType = MutableStateFlow<RewriteType?>(null)
     val aiRewriteType: StateFlow<RewriteType?> = _aiRewriteType.asStateFlow()
+    
+    private val _pdfConfig = MutableStateFlow<com.example.mytodoapp.utils.PdfConfig?>(null)
+    val pdfConfig: StateFlow<com.example.mytodoapp.utils.PdfConfig?> = _pdfConfig.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -105,6 +108,13 @@ class TodoViewModel(
                 }
             }
         }
+        viewModelScope.launch {
+            preferenceManager.pdfConfig.collect { config ->
+                if (_pdfConfig.value == null) {
+                    _pdfConfig.value = config
+                }
+            }
+        }
     }
 
     fun saveThemeMode(mode: ThemeMode) {
@@ -118,6 +128,13 @@ class TodoViewModel(
         _aiRewriteType.value = type // Instant UI update
         viewModelScope.launch {
             preferenceManager.saveAiRewriteType(type)
+        }
+    }
+
+    fun savePdfConfig(config: com.example.mytodoapp.utils.PdfConfig) {
+        _pdfConfig.value = config // Instant UI update
+        viewModelScope.launch {
+            preferenceManager.savePdfConfig(config)
         }
     }
 

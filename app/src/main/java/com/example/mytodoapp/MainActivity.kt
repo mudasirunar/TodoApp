@@ -25,13 +25,10 @@ import com.example.mytodoapp.ui.theme.MyTodoAppTheme
 import com.example.mytodoapp.ui.viewmodel.TodoViewModel
 import com.example.mytodoapp.ui.viewmodel.TodoViewModelFactory
 import androidx.appcompat.app.AppCompatActivity
+import com.example.mytodoapp.components.RewriteType
 import com.example.mytodoapp.ui.screens.SettingsScreen
 import com.example.mytodoapp.utils.ThemeMode
 import com.example.mytodoapp.utils.PreferenceManager
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.Dispatchers
 
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -65,13 +62,11 @@ class MainActivity : AppCompatActivity() {
             // Fallback while loading
             if (themeMode == null) return@setContent
 
+            val systemTheme = androidx.compose.foundation.isSystemInDarkTheme()
             val darkTheme = when (themeMode) {
                 ThemeMode.LIGHT -> false
                 ThemeMode.DARK -> true
-                else -> {
-                    val systemConfig = android.content.res.Resources.getSystem().configuration
-                    (systemConfig.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
-                }
+                else -> systemTheme
             }
 
             MyTodoAppTheme(darkTheme = darkTheme) {
@@ -88,10 +83,18 @@ class MainActivity : AppCompatActivity() {
                                 slideInHorizontally(animationSpec = tween(400)) { it } + fadeIn(tween(400)) 
                             },
                             exitTransition = { 
-                                slideOutHorizontally(animationSpec = tween(400)) { -it } + fadeOut(tween(400)) 
+                                if (targetState.destination.route?.startsWith("pdf_preview") == true) {
+                                    fadeOut(tween(400))
+                                } else {
+                                    slideOutHorizontally(animationSpec = tween(400)) { -it } + fadeOut(tween(400)) 
+                                }
                             },
                             popEnterTransition = { 
-                                slideInHorizontally(animationSpec = tween(400)) { -it } + fadeIn(tween(400)) 
+                                if (initialState.destination.route?.startsWith("pdf_preview") == true) {
+                                    fadeIn(tween(400))
+                                } else {
+                                    slideInHorizontally(animationSpec = tween(400)) { -it } + fadeIn(tween(400)) 
+                                }
                             },
                             popExitTransition = { 
                                 slideOutHorizontally(animationSpec = tween(400)) { it } + fadeOut(tween(400)) 
@@ -128,12 +131,15 @@ class MainActivity : AppCompatActivity() {
                             composable("settings") {
                                 val currentTheme by viewModel.themeMode.collectAsStateWithLifecycle()
                                 val currentAiStyle by viewModel.aiRewriteType.collectAsStateWithLifecycle()
+                                val currentPdfConfig by viewModel.pdfConfig.collectAsStateWithLifecycle()
                                 
                                 SettingsScreen(
                                     currentTheme = currentTheme ?: ThemeMode.SYSTEM,
                                     onThemeSelected = { viewModel.saveThemeMode(it) },
-                                    currentAiStyle = currentAiStyle ?: com.example.mytodoapp.utils.RewriteType.Standard,
+                                    currentAiStyle = currentAiStyle ?: RewriteType.Standard,
                                     onAiStyleSelected = { viewModel.saveAiRewriteType(it) },
+                                    currentPdfConfig = currentPdfConfig ?: com.example.mytodoapp.utils.PdfConfig(),
+                                    onPdfConfigChange = { viewModel.savePdfConfig(it) },
                                     onBack = { navController.popBackStack() }
                                 )
                             }
@@ -142,17 +148,31 @@ class MainActivity : AppCompatActivity() {
                                 route = "pdf_preview/{groupId}",
                                 arguments = listOf(
                                     navArgument("groupId") { type = NavType.StringType }
-                                )
+                                ),
+                                enterTransition = { 
+                                    slideInVertically(animationSpec = tween(400)) { it } + fadeIn(tween(400)) 
+                                },
+                                exitTransition = { 
+                                    slideOutVertically(animationSpec = tween(400)) { -it } + fadeOut(tween(400)) 
+                                },
+                                popEnterTransition = { 
+                                    slideInVertically(animationSpec = tween(400)) { -it } + fadeIn(tween(400)) 
+                                },
+                                popExitTransition = { 
+                                    slideOutVertically(animationSpec = tween(400)) { it } + fadeOut(tween(400)) 
+                                }
                             ) { backStack ->
                                 val groupId = backStack.arguments?.getString("groupId") ?: ""
                                 val groups by viewModel.groups.collectAsStateWithLifecycle()
                                 val previewGroup by viewModel.previewGroup.collectAsStateWithLifecycle()
+                                val pdfConfig by viewModel.pdfConfig.collectAsStateWithLifecycle()
 
                                 // Use previewGroup if available (unsaved data), otherwise fallback to DB
                                 val group = previewGroup ?: groups?.find { it.id == groupId } ?: TodoGroup(id = groupId)
 
                                 PdfPreviewScreen(
                                     group = group,
+                                    config = pdfConfig ?: com.example.mytodoapp.utils.PdfConfig(),
                                     onBack = { 
                                         viewModel.setPreviewGroup(null) // Clean up
                                         navController.popBackStack() 

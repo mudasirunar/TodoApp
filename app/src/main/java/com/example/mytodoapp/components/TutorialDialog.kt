@@ -1,7 +1,6 @@
-package com.example.mytodoapp.utils
+package com.example.mytodoapp.components
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -25,7 +24,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
@@ -37,6 +35,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.unit.lerp
+import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 @Composable
@@ -95,7 +94,7 @@ fun SwipeTutorialDialog(onDismiss: () -> Unit) {
                             val heightDp = when {
                                 continuousPage < 2f -> 220.dp
                                 continuousPage > 3f -> 320.dp
-                                else -> androidx.compose.ui.unit.lerp(220.dp, 320.dp, continuousPage - 2f)
+                                else -> lerp(220.dp, 320.dp, continuousPage - 2f)
                             }
                             val heightPx = heightDp.roundToPx()
                             val placeable = measurable.measure(
@@ -316,7 +315,7 @@ fun TaskLongPressMovementAnimationPreview(isVisible: Boolean) {
             while (true) {
                 val elapsed = System.currentTimeMillis() - startTime
                 progress = (elapsed % duration) / duration.toFloat()
-                kotlinx.coroutines.delay(16)
+                delay(16)
             }
         } else {
             progress = 0f
@@ -410,7 +409,7 @@ fun TaskMovementAnimationPreview(isVisible: Boolean) {
             while (true) {
                 val elapsed = System.currentTimeMillis() - startTime
                 progress = (elapsed % duration) / duration.toFloat()
-                kotlinx.coroutines.delay(16)
+                delay(16)
             }
         } else {
             progress = 0f
@@ -548,7 +547,7 @@ fun AiStyleAnimationPreview(isVisible: Boolean) {
             while (true) {
                 val elapsed = System.currentTimeMillis() - startTime
                 progress = (elapsed % duration) / duration.toFloat()
-                kotlinx.coroutines.delay(16)
+                delay(16)
             }
         } else {
             progress = 0f
@@ -693,7 +692,7 @@ fun AiRewriteAnimationPreview(isVisible: Boolean) {
             while (true) {
                 val elapsed = System.currentTimeMillis() - startTime
                 progress = (elapsed % duration) / duration.toFloat()
-                kotlinx.coroutines.delay(16)
+                delay(16)
             }
         } else {
             progress = 0f

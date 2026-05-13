@@ -3,9 +3,11 @@ package com.example.mytodoapp.utils
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.example.mytodoapp.components.RewriteType
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -15,6 +17,11 @@ enum class ThemeMode {
     SYSTEM
 }
 
+data class PdfConfig(
+    val includeStatus: Boolean = true,
+    val includeFavorites: Boolean = true
+)
+
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings_prefs")
 
 class PreferenceManager(private val context: Context) {
@@ -22,6 +29,8 @@ class PreferenceManager(private val context: Context) {
     companion object {
         val THEME_MODE_KEY = stringPreferencesKey("theme_mode")
         val AI_REWRITE_TYPE_KEY = stringPreferencesKey("ai_rewrite_type")
+        val PDF_INCLUDE_STATUS_KEY = booleanPreferencesKey("pdf_include_status")
+        val PDF_INCLUDE_FAVORITES_KEY = booleanPreferencesKey("pdf_include_favorites")
     }
 
     val themeMode: Flow<ThemeMode> = context.dataStore.data.map { preferences ->
@@ -42,6 +51,13 @@ class PreferenceManager(private val context: Context) {
         }
     }
 
+    val pdfConfig: Flow<PdfConfig> = context.dataStore.data.map { preferences ->
+        PdfConfig(
+            includeStatus = preferences[PDF_INCLUDE_STATUS_KEY] ?: true,
+            includeFavorites = preferences[PDF_INCLUDE_FAVORITES_KEY] ?: true
+        )
+    }
+
     suspend fun saveThemeMode(mode: ThemeMode) {
         context.dataStore.edit { preferences ->
             preferences[THEME_MODE_KEY] = mode.name
@@ -51,6 +67,13 @@ class PreferenceManager(private val context: Context) {
     suspend fun saveAiRewriteType(type: RewriteType) {
         context.dataStore.edit { preferences ->
             preferences[AI_REWRITE_TYPE_KEY] = type.name
+        }
+    }
+
+    suspend fun savePdfConfig(config: PdfConfig) {
+        context.dataStore.edit { preferences ->
+            preferences[PDF_INCLUDE_STATUS_KEY] = config.includeStatus
+            preferences[PDF_INCLUDE_FAVORITES_KEY] = config.includeFavorites
         }
     }
 }

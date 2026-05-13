@@ -10,6 +10,7 @@ import android.net.Uri
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
+import androidx.compose.ui.graphics.toArgb
 import com.example.mytodoapp.data.TodoTask
 import java.io.FileOutputStream
 
@@ -20,16 +21,13 @@ object PdfHelper {
     private const val MARGIN = 40f
     private const val COL_SR = MARGIN
     private const val COL_TASK = 75f
-    private const val COL_STATUS = 410f
-    private const val COL_FAV = 515f
-    private const val TASK_WIDTH = 320
     private const val TABLE_WIDTH = 555f
 
-    fun generateTodoPdf(context: Context, uri: Uri, title: String, tasks: List<TodoTask>) {
+    fun generateTodoPdf(context: Context, uri: Uri, title: String, tasks: List<TodoTask>, config: PdfConfig = PdfConfig()) {
         try {
             context.contentResolver.openFileDescriptor(uri, "w")?.use { pfd ->
                 FileOutputStream(pfd.fileDescriptor).use { outputStream ->
-                    writePdfToStream(outputStream, title, tasks)
+                    writePdfToStream(outputStream, title, tasks, config)
                 }
             }
         } catch (e: Exception) {
@@ -37,7 +35,7 @@ object PdfHelper {
         }
     }
 
-    fun writePdfToStream(outputStream: java.io.OutputStream, title: String, tasks: List<TodoTask>) {
+    fun writePdfToStream(outputStream: java.io.OutputStream, title: String, tasks: List<TodoTask>, config: PdfConfig = PdfConfig()) {
         val pdfDocument = PdfDocument()
         val validTasks = tasks.filter { it.text.isNotBlank() }
         
@@ -51,11 +49,11 @@ object PdfHelper {
 
         // Draw Title only on first page
         drawTitle(canvas, title)
-        drawTableHeader(canvas, y)
+        drawTableHeader(canvas, y, config)
         y += 20f
 
         validTasks.forEachIndexed { index, task ->
-            val rowHeight = calculateRowHeight(task, taskTextPaint)
+            val rowHeight = calculateRowHeight(task, taskTextPaint, config)
             
             // Multi-page Check
             if (y + rowHeight > 800f) {
@@ -65,11 +63,11 @@ object PdfHelper {
                 page = pdfDocument.startPage(pageInfo)
                 canvas = page.canvas
                 y = 50f
-                drawTableHeader(canvas, y)
+                drawTableHeader(canvas, y, config)
                 y += 20f
             }
 
-            drawTaskRow(canvas, index, task, y, rowHeight)
+            drawTaskRow(canvas, index, task, y, rowHeight, config)
             y += rowHeight + 2f // Add small gap
         }
 
@@ -124,32 +122,49 @@ object PdfHelper {
         canvas.drawText(title.ifBlank { "Untitled Project" }, COL_SR, 55f, titlePaint)
     }
 
-    private fun drawTableHeader(canvas: Canvas, y: Float) {
+    private fun drawTableHeader(canvas: Canvas, y: Float, config: PdfConfig) {
         val paint = headerPaint
         val linePaint = Paint().apply { color = Color.DKGRAY; strokeWidth = 1.2f }
         canvas.drawText("No.", COL_SR, y, paint)
         canvas.drawText("Task Description", COL_TASK, y, paint)
-        canvas.drawText("Status", COL_STATUS, y, paint)
-        canvas.drawText("Fav", COL_FAV, y, paint)
+        
+        var currentX = COL_TASK + getTaskWidth(config) + 15f
+        if (config.includeStatus) {
+            canvas.drawText("Status", currentX, y, paint)
+            currentX += 105f
+        }
+        if (config.includeFavorites) {
+            canvas.drawText("Favorite", currentX, y, paint)
+        }
+        
         canvas.drawLine(COL_SR, y + 8f, TABLE_WIDTH, y + 8f, linePaint)
     }
 
-    fun calculateRowHeight(task: TodoTask, paint: TextPaint): Float {
-        val staticLayout = StaticLayout.Builder.obtain(task.text, 0, task.text.length, paint, TASK_WIDTH)
+    private fun getTaskWidth(config: PdfConfig): Int {
+        return when {
+            !config.includeStatus && !config.includeFavorites -> 470
+            !config.includeStatus && config.includeFavorites -> 430
+            config.includeStatus && !config.includeFavorites -> 420
+            else -> 320
+        }
+    }
+
+    fun calculateRowHeight(task: TodoTask, paint: TextPaint, config: PdfConfig): Float {
+        val staticLayout = StaticLayout.Builder.obtain(task.text, 0, task.text.length, paint, getTaskWidth(config))
             .setAlignment(Layout.Alignment.ALIGN_NORMAL)
             .setLineSpacing(0f, 1.1f)
             .build()
         return staticLayout.height.toFloat() + 12f // vertical padding
     }
 
-    fun drawTaskRow(canvas: Canvas, index: Int, task: TodoTask, y: Float, rowHeight: Float) {
+    fun drawTaskRow(canvas: Canvas, index: Int, task: TodoTask, y: Float, rowHeight: Float, config: PdfConfig) {
         val centerYOffset = (rowHeight / 2f)
 
         // 1. Serial Number
         canvas.drawText("${index + 1}.", COL_SR, y + centerYOffset + 4f, taskTextPaint)
 
         // 2. Task Description (Wrapped)
-        val staticLayout = StaticLayout.Builder.obtain(task.text, 0, task.text.length, taskTextPaint, TASK_WIDTH)
+        val staticLayout = StaticLayout.Builder.obtain(task.text, 0, task.text.length, taskTextPaint, getTaskWidth(config))
             .setAlignment(Layout.Alignment.ALIGN_NORMAL)
             .setLineSpacing(0f, 1.1f)
             .build()
@@ -159,27 +174,29 @@ object PdfHelper {
         staticLayout.draw(canvas)
         canvas.restore()
 
+        var currentX = COL_TASK + getTaskWidth(config) + 15f
+
         // 3. Status Badge
-        val statusColorStr = when (task.status.label) {
-            "Done" -> "#2E7D32"
-            "Ongoing" -> "#1565C0"
-            else -> "#C62828"
+        if (config.includeStatus) {
+            val statusPaint = Paint().apply {
+                textSize = 10f
+                isFakeBoldText = true
+                color = task.status.color.toArgb()
+            }
+            canvas.drawText(task.status.label, currentX, y + centerYOffset + 4f, statusPaint)
+            currentX += 105f
         }
-        val statusPaint = Paint().apply {
-            textSize = 10f
-            isFakeBoldText = true
-            color = Color.parseColor(statusColorStr)
-        }
-        canvas.drawText(task.status.label, COL_STATUS, y + centerYOffset + 4f, statusPaint)
 
         // 4. Favorite Star
-        val starX = COL_FAV + 12f
-        val starY = y + centerYOffset
-        if (task.isFavorite) {
-            drawStar(canvas, starX, starY, 6f, goldPaint)
-            drawStar(canvas, starX, starY, 6f, goldStrokePaint)
-        } else {
-            drawStar(canvas, starX, starY, 6f, goldStrokePaint)
+        if (config.includeFavorites) {
+            val starX = currentX + 12f
+            val starY = y + centerYOffset
+            if (task.isFavorite) {
+                drawStar(canvas, starX, starY, 6f, goldPaint)
+                drawStar(canvas, starX, starY, 6f, goldStrokePaint)
+            } else {
+                drawStar(canvas, starX, starY, 6f, goldStrokePaint)
+            }
         }
 
         // 5. Subtle Divider
@@ -201,54 +218,5 @@ object PdfHelper {
         }
         path.close()
         canvas.drawPath(path, paint)
-    }
-
-    // --- Preview Helper ---
-    
-    data class PdfPageData(
-        val title: String,
-        val tasks: List<TodoTask>,
-        val pageNumber: Int,
-        val isFirstPage: Boolean
-    )
-
-    fun paginateTasks(title: String, tasks: List<TodoTask>): List<List<TodoTask>> {
-        val pages = mutableListOf<MutableList<TodoTask>>()
-        var currentTasks = mutableListOf<TodoTask>()
-        var y = 90f + 20f // title + header
-        
-        tasks.filter { it.text.isNotBlank() }.forEach { task ->
-            val rowHeight = calculateRowHeight(task, taskTextPaint)
-            if (y + rowHeight > 800f) {
-                pages.add(currentTasks)
-                currentTasks = mutableListOf()
-                y = 50f + 20f // header only on new page
-            }
-            currentTasks.add(task)
-            y += rowHeight + 2f
-        }
-        if (currentTasks.isNotEmpty()) pages.add(currentTasks)
-        return pages
-    }
-
-    fun drawPreviewPage(canvas: Canvas, title: String, tasks: List<TodoTask>, isFirstPage: Boolean, startIndex: Int) {
-        // Clear background
-        canvas.drawColor(Color.WHITE)
-        
-        var y = if (isFirstPage) {
-            drawTitle(canvas, title)
-            90f
-        } else {
-            50f
-        }
-        
-        drawTableHeader(canvas, y)
-        y += 20f
-        
-        tasks.forEachIndexed { index, task ->
-            val rowHeight = calculateRowHeight(task, taskTextPaint)
-            drawTaskRow(canvas, startIndex + index, task, y, rowHeight)
-            y += rowHeight + 2f
-        }
     }
 }

@@ -1,12 +1,7 @@
 package com.example.mytodoapp.ui.screens
 
-import android.Manifest
 import android.os.Build
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -30,7 +25,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
@@ -64,13 +58,13 @@ import com.example.mytodoapp.data.TodoGroup
 import com.example.mytodoapp.data.TodoStatus
 import com.example.mytodoapp.data.TodoTask
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.mytodoapp.components.ExportPdfDialog
 import com.example.mytodoapp.ui.viewmodel.TodoViewModel
 import com.example.mytodoapp.utils.AiHelper
-import com.example.mytodoapp.utils.AiRewriteOptionsDialog
-import com.example.mytodoapp.utils.PdfHelper
-import com.example.mytodoapp.utils.RewriteType
-import com.example.mytodoapp.utils.SwipeTutorialDialog
-import com.example.mytodoapp.utils.TodoAlertDialog
+import com.example.mytodoapp.components.AiRewriteOptionsDialog
+import com.example.mytodoapp.components.RewriteType
+import com.example.mytodoapp.components.SwipeTutorialDialog
+import com.example.mytodoapp.components.TodoAlertDialog
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -121,9 +115,16 @@ fun AddTodoScreen(
     // Collect global AI Style from settings
     val globalAiStyleState by viewModel.aiRewriteType.collectAsStateWithLifecycle()
     val globalAiStyle = globalAiStyleState ?: RewriteType.Standard
+    
+    // Collect global PDF Config from settings
+    val globalPdfConfigState by viewModel.pdfConfig.collectAsStateWithLifecycle()
+    val globalPdfConfig = globalPdfConfigState ?: com.example.mytodoapp.utils.PdfConfig()
 
-    // ✅ UI STATE FOR EXPANDABLE TOOLBAR
-    var isControlsExpanded by rememberSaveable { mutableStateOf(false) }
+    // ✅ UI STATE FOR OVERFLOW MENU
+    var showMenu by remember { mutableStateOf(false) }
+    
+    // ✅ UI STATE FOR EXPORT DIALOG
+    var showExportDialog by rememberSaveable { mutableStateOf(false) }
 
     // ✅ FIX: PREVENT ANIMATION RE-TRIGGERING
     var hasAnimatedHighlight by rememberSaveable { mutableStateOf(false) }
@@ -283,98 +284,100 @@ fun AddTodoScreen(
                 ) {
                     // 1. BACK BUTTON
                     IconButton(onClick = { onNavigateBack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack, 
+                            contentDescription = "Back",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
                     }
 
-                    // 2. ANIMATED TITLE (Moves from center to left when expanded)
-                    val titleBias by animateFloatAsState(
-                        targetValue = if (isControlsExpanded) -1f else 0f,
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioNoBouncy,
-                            stiffness = Spring.StiffnessMediumLow
-                        ),
-                        label = "titlePosition"
-                    )
-
+                    // 2. STATIC TITLE
                     Box(
                         modifier = Modifier
                             .weight(1f)
                             .padding(horizontal = 8.dp),
-                        contentAlignment = BiasAlignment(horizontalBias = titleBias, verticalBias = 0f)
+                        contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = if (title.isBlank()) "Untitled" else title,
+                            text = title.ifBlank { "Untitled" },
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.animateContentSize()
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
 
-                    // 3. EXPANDABLE ACTIONS
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        AnimatedVisibility(
-                            visible = isControlsExpanded,
-                            enter = expandHorizontally(expandFrom = Alignment.End) + fadeIn() + slideInHorizontally { it / 2 },
-                            exit = shrinkHorizontally(shrinkTowards = Alignment.End) + fadeOut() + slideOutHorizontally { it / 2 }
+                    // 3. OVERFLOW MENU
+                    Box {
+                        IconButton(onClick = { showMenu = true }) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "Options",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false },
+                            modifier = Modifier.width(200.dp),
+                            shape = RoundedCornerShape(16.dp)
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                // PDF BUTTON
-                                IconButton(
-                                    onClick = {
-                                        handleExit {
-                                            val updatedGroup = existingGroup.copy(title = title, tasks = tasks)
-                                            viewModel.setPreviewGroup(updatedGroup)
-                                            onNavigateToPreview(updatedGroup)
-                                        }
-                                    },
-                                    enabled = isPdfEnabled
-                                ) {
+                            DropdownMenuItem(
+                                text = { Text("Preview PDF", color = if (isPdfEnabled) MaterialTheme.colorScheme.secondary else Color.Gray.copy(alpha = 0.4f)) },
+                                onClick = {
+                                    showMenu = false
+                                    handleExit {
+                                        val updatedGroup = existingGroup.copy(title = title, tasks = tasks)
+                                        viewModel.setPreviewGroup(updatedGroup)
+                                        onNavigateToPreview(updatedGroup)
+                                    }
+                                },
+                                leadingIcon = {
                                     Icon(
                                         imageVector = Icons.Default.PictureAsPdf,
                                         contentDescription = "Preview PDF",
                                         tint = if (isPdfEnabled) MaterialTheme.colorScheme.secondary else Color.Gray.copy(alpha = 0.4f)
                                     )
-                                }
-
-                                // DELETE BUTTON
-                                IconButton(onClick = { 
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    handleExit { showDeleteDialog = true } 
-                                }) {
-                                    Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
-                                }
-
-                                // SAVE BUTTON
-                                IconButton(onClick = { 
-                                    handleExit { onSave(existingGroup.copy(id = existingGroup.id, title = title, tasks = tasks)) } 
-                                }) {
-                                    Icon(Icons.Default.Save, "Save", tint = MaterialTheme.colorScheme.primary)
-                                }
-                            }
-                        }
-
-                        // 4. TOGGLE BUTTON (Animated icon change)
-                        IconButton(onClick = { isControlsExpanded = !isControlsExpanded }) {
-                            AnimatedContent(
-                                targetState = isControlsExpanded,
-                                transitionSpec = {
-                                    (fadeIn() + scaleIn()).togetherWith(fadeOut() + scaleOut())
                                 },
-                                label = "toggleIcon"
-                            ) { expanded ->
-                                val icon = if (expanded) Icons.Default.ChevronRight else Icons.Default.ChevronLeft
-                                Icon(
-                                    imageVector = icon,
-                                    contentDescription = if (expanded) "Collapse" else "Expand",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            }
+                                enabled = isPdfEnabled
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Share/Export", color = if (isPdfEnabled) MaterialTheme.colorScheme.primary else Color.Gray.copy(alpha = 0.4f)) },
+                                onClick = {
+                                    showMenu = false
+                                    handleExit { showExportDialog = true }
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Share,
+                                        contentDescription = "Export as PDF",
+                                        tint = if (isPdfEnabled) MaterialTheme.colorScheme.primary else Color.Gray.copy(alpha = 0.4f)
+                                    )
+                                },
+                                enabled = isPdfEnabled
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Save", color = MaterialTheme.colorScheme.primary) },
+                                onClick = {
+                                    showMenu = false
+                                    handleExit { onSave(existingGroup.copy(id = existingGroup.id, title = title, tasks = tasks)) } 
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Save, contentDescription = "Save", tint = MaterialTheme.colorScheme.primary)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                                onClick = {
+                                    showMenu = false
+                                    handleExit { showDeleteDialog = true }
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
+                                }
+                            )
                         }
                     }
                 }
@@ -401,6 +404,15 @@ fun AddTodoScreen(
             }
         }
     ) { padding ->
+
+        if (showExportDialog) {
+            ExportPdfDialog(
+                title = title,
+                tasks = tasks,
+                config = globalPdfConfig,
+                onDismiss = { showExportDialog = false }
+            )
+        }
 
         if (showDeleteDialog) {
             TodoAlertDialog(

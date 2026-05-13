@@ -2,6 +2,7 @@ package com.example.mytodoapp.ui.screens
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -9,6 +10,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -21,7 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mytodoapp.R
-import com.example.mytodoapp.utils.RewriteType
+import com.example.mytodoapp.components.RewriteType
 import com.example.mytodoapp.utils.ThemeMode
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -31,6 +33,8 @@ fun SettingsScreen(
     onThemeSelected: (ThemeMode) -> Unit,
     currentAiStyle: RewriteType,
     onAiStyleSelected: (RewriteType) -> Unit,
+    currentPdfConfig: com.example.mytodoapp.utils.PdfConfig,
+    onPdfConfigChange: (com.example.mytodoapp.utils.PdfConfig) -> Unit,
     onBack: () -> Unit
 ) {
     Scaffold(
@@ -67,10 +71,146 @@ fun SettingsScreen(
                 currentAiStyle = currentAiStyle,
                 onAiStyleSelected = onAiStyleSelected
             )
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            PdfConfigSection(
+                currentConfig = currentPdfConfig,
+                onConfigChange = onPdfConfigChange
+            )
             
             Spacer(modifier = Modifier.weight(1f))
             
             AppBrandingFooter()
+        }
+    }
+}
+
+@Composable
+fun PdfConfigSection(
+    currentConfig: com.example.mytodoapp.utils.PdfConfig,
+    onConfigChange: (com.example.mytodoapp.utils.PdfConfig) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "PDF Generation",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+
+        Text(
+            text = "Select which columns to include in the PDF.",
+            fontSize = 14.sp,
+            color = Color.Gray,
+            modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
+        )
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+            ),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
+        ) {
+            Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(
+                            interactionSource = androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                            indication = null
+                        ) { onConfigChange(currentConfig.copy(includeStatus = !currentConfig.includeStatus)) }
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Status", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                    }
+                    val isStatusSelected = currentConfig.includeStatus
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (isStatusSelected) MaterialTheme.colorScheme.primary 
+                                else Color.Transparent
+                            )
+                            .border(
+                                width = 2.dp,
+                                color = if (isStatusSelected) MaterialTheme.colorScheme.primary 
+                                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                                shape = CircleShape
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = isStatusSelected,
+                            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(),
+                            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut()
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    thickness = 0.5.dp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(
+                            interactionSource = androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                            indication = null
+                        ) { onConfigChange(currentConfig.copy(includeFavorites = !currentConfig.includeFavorites)) }
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Favorites", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                    }
+                    val isFavoritesSelected = currentConfig.includeFavorites
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (isFavoritesSelected) MaterialTheme.colorScheme.primary 
+                                else Color.Transparent
+                            )
+                            .border(
+                                width = 2.dp,
+                                color = if (isFavoritesSelected) MaterialTheme.colorScheme.primary 
+                                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                                shape = CircleShape
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = isFavoritesSelected,
+                            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(),
+                            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.scaleOut()
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }

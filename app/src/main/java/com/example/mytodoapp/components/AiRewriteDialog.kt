@@ -1,4 +1,4 @@
-package com.example.mytodoapp.utils
+package com.example.mytodoapp.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.example.mytodoapp.utils.RewriteMode
 
 enum class RewriteType(
     val label: String,

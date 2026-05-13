@@ -5,6 +5,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -17,7 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.*
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
 import com.example.mytodoapp.data.TodoGroup
@@ -37,11 +38,26 @@ import java.util.Locale
 @Composable
 fun PdfPreviewScreen(
     group: TodoGroup,
+    config: com.example.mytodoapp.utils.PdfConfig = com.example.mytodoapp.utils.PdfConfig(),
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
     var tempPdfFile by remember { mutableStateOf<File?>(null) }
     var isGenerating by remember { mutableStateOf(true) }
+    var showLoadingUi by remember { mutableStateOf(false) }
+    var isActionsDisabled by remember { mutableStateOf(true) }
+    var localConfig by remember { mutableStateOf(config) }
+
+    LaunchedEffect(isGenerating) {
+        if (isGenerating) {
+            kotlinx.coroutines.delay(250)
+            showLoadingUi = true
+            isActionsDisabled = true
+        } else {
+            showLoadingUi = false
+            isActionsDisabled = false
+        }
+    }
     
     // PDF Save Logic (Final Export)
     val createDocumentLauncher = rememberLauncherForActivityResult(
@@ -49,7 +65,7 @@ fun PdfPreviewScreen(
     ) { uri ->
         if (uri != null) {
             try {
-                PdfHelper.generateTodoPdf(context, uri, group.title, group.tasks)
+                PdfHelper.generateTodoPdf(context, uri, group.title, group.tasks, localConfig)
                 Toast.makeText(context, "PDF saved successfully!", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 Toast.makeText(context, "Failed to save PDF", Toast.LENGTH_SHORT).show()
@@ -58,7 +74,7 @@ fun PdfPreviewScreen(
     }
 
     // ✅ ASYNCHRONOUS GENERATION: Move I/O off the main thread to prevent UI freezing
-    LaunchedEffect(group) {
+    LaunchedEffect(group, localConfig) {
         isGenerating = true
         withContext(Dispatchers.IO) {
             try {
@@ -78,7 +94,7 @@ fun PdfPreviewScreen(
                 val file = File(uniqueFolder, fileName)
 
                 FileOutputStream(file).use {
-                    PdfHelper.writePdfToStream(it, group.title, group.tasks)
+                    PdfHelper.writePdfToStream(it, group.title, group.tasks, localConfig)
                 }
                 
                 // 4. Update state on main thread
@@ -132,10 +148,48 @@ fun PdfPreviewScreen(
             )
         },
         bottomBar = {
-            BottomAppBar(
-                containerColor = MaterialTheme.colorScheme.surface,
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
                 tonalElevation = 8.dp,
-                actions = {
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(vertical = 12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Include:", style = MaterialTheme.typography.labelMedium, color = Color.Gray, modifier = Modifier.padding(end = 12.dp))
+                        
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.clickable { localConfig = localConfig.copy(includeStatus = !localConfig.includeStatus) }
+                        ) {
+                            Checkbox(
+                                checked = localConfig.includeStatus,
+                                onCheckedChange = { localConfig = localConfig.copy(includeStatus = it) },
+                                modifier = Modifier.size(32.dp)
+                            )
+                            Text("Status", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 4.dp))
+                        }
+                        
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.clickable { localConfig = localConfig.copy(includeFavorites = !localConfig.includeFavorites) }
+                        ) {
+                            Checkbox(
+                                checked = localConfig.includeFavorites,
+                                onCheckedChange = { localConfig = localConfig.copy(includeFavorites = it) },
+                                modifier = Modifier.size(32.dp)
+                            )
+                            Text("Favorites", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 4.dp))
+                        }
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly,
@@ -150,7 +204,7 @@ fun PdfPreviewScreen(
                             },
                             modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
                             shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
-                            enabled = !isGenerating
+                            enabled = !isActionsDisabled
                         ) {
                             Icon(Icons.Default.Download, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
@@ -161,7 +215,7 @@ fun PdfPreviewScreen(
                             onClick = onSharePdf,
                             modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
                             shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
-                            enabled = !isGenerating
+                            enabled = !isActionsDisabled
                         ) {
                             Icon(Icons.Default.Share, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
@@ -169,24 +223,28 @@ fun PdfPreviewScreen(
                         }
                     }
                 }
-            )
+            }
         },
         containerColor = Color(0xFFE2E8F0)
     ) { padding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
+                .padding(padding),
+            contentAlignment = Alignment.Center
         ) {
-            val currentFile = tempPdfFile
-            if (!isGenerating && currentFile != null && currentFile.exists()) {
-                // Force reload when path changes
-                key(currentFile.path) {
+            // ✅ CROSSFADE FOR SMOOTH TRANSITION BETWEEN FILES
+            androidx.compose.animation.Crossfade(
+                targetState = tempPdfFile,
+                label = "pdfFade",
+                animationSpec = androidx.compose.animation.core.tween(500)
+            ) { file ->
+                if (file != null && file.exists()) {
                     AndroidView(
                         factory = { ctx ->
                             PDFView(ctx, null).apply {
                                 setBackgroundColor(android.graphics.Color.parseColor("#BDC3C7"))
-                                fromFile(currentFile)
+                                fromFile(file)
                                     .enableSwipe(true)
                                     .swipeHorizontal(false)
                                     .enableDoubletap(true)
@@ -204,15 +262,20 @@ fun PdfPreviewScreen(
                         modifier = Modifier.fillMaxSize()
                     )
                 }
-            } else {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
+            }
+
+            // ✅ SHOW LOADER AS AN OVERLAY (Prevents screen from going empty/white)
+            if (showLoadingUi) {
+                Surface(
+                    color = Color.Black.copy(alpha = 0.3f),
+                    modifier = Modifier.fillMaxSize()
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text("Generating Preview...", color = Color.Gray)
+                    Box(contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator(color = Color.White)
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text("Generating Preview...", color = Color.White)
+                        }
                     }
                 }
             }
