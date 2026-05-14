@@ -48,10 +48,17 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+import com.example.mytodoapp.utils.ImportState
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
     groups: List<TodoGroup>?,
+    importState: ImportState = ImportState.Idle,
+    onResetImportState: () -> Unit = {},
     softDeleteGroupId: String? = null,
     onSoftDeleteHandled: () -> Unit = {},
     onNavigateToEdit: (TodoGroup, String) -> Unit,
@@ -62,6 +69,107 @@ fun DashboardScreen(
     var groupToDelete by remember { mutableStateOf<TodoGroup?>(null) }
     val haptic = LocalHapticFeedback.current
     val scrollState = rememberLazyListState()
+
+    // --- Import Dialogs ---
+    if (importState is ImportState.Loading) {
+        AlertDialog(
+            onDismissRequest = { },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(28.dp),
+            title = { 
+                Text(
+                    "Restoring Data", 
+                    fontWeight = FontWeight.ExtraBold, 
+                    color = MaterialTheme.colorScheme.onSurface 
+                ) 
+            },
+            text = { 
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text("Please wait...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            confirmButton = { }
+        )
+    } else if (importState is ImportState.Success) {
+        val successState = importState as ImportState.Success
+        AlertDialog(
+            onDismissRequest = { onResetImportState() },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(28.dp),
+            icon = { 
+                Icon(
+                    imageVector = Icons.Default.CheckCircle, 
+                    contentDescription = null, 
+                    tint = Color(0xFF4CAF50), 
+                    modifier = Modifier.size(32.dp)
+                ) 
+            },
+            title = { 
+                Text(
+                    "Import Successful", 
+                    fontWeight = FontWeight.ExtraBold, 
+                    color = MaterialTheme.colorScheme.onSurface 
+                ) 
+            },
+            text = { 
+                Column {
+                    Text("Data has been successfully restored.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("• Tasks Imported: ${successState.tasksImported}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+                    Text("• Duplicates Ignored: ${successState.duplicatesIgnored}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        "Your settings have also been updated.", 
+                        style = MaterialTheme.typography.labelMedium, 
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { onResetImportState() },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                    shape = RoundedCornerShape(28.dp)
+                ) {
+                    Text("Great", fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    } else if (importState is ImportState.Error) {
+        val errorState = importState as ImportState.Error
+        AlertDialog(
+            onDismissRequest = { onResetImportState() },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(28.dp),
+            icon = { 
+                Icon(
+                    imageVector = Icons.Default.Warning, 
+                    contentDescription = null, 
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(32.dp)
+                ) 
+            },
+            title = { 
+                Text(
+                    "Import Failed", 
+                    fontWeight = FontWeight.ExtraBold, 
+                    color = MaterialTheme.colorScheme.onSurface 
+                ) 
+            },
+            text = { Text(errorState.message, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+            confirmButton = {
+                Button(
+                    onClick = { onResetImportState() },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                    shape = RoundedCornerShape(28.dp)
+                ) {
+                    Text("OK", fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
 
     // --- Soft Delete Logic ---
     val pendingDeletions = remember { mutableStateMapOf<String, TodoGroup>() }

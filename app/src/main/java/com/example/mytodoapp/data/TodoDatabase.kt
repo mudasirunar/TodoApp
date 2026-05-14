@@ -45,6 +45,9 @@ interface TodoDao {
 
     @Delete
     suspend fun deleteGroup(group: TodoGroupEntity)
+
+    @Query("DELETE FROM todo_groups")
+    suspend fun deleteAllGroups()
 }
 
 // 1. Change version from 1 to 2
@@ -71,7 +74,7 @@ abstract class TodoDatabase : RoomDatabase() {
                     TodoDatabase::class.java,
                     "todo_database"
                 )
-                    .addMigrations(MIGRATION_1_2) // 3. Add the migration here
+                    .addMigrations(MIGRATION_1_2)
                     .build()
                 INSTANCE = instance
                 instance

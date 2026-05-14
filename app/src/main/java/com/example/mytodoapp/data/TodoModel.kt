@@ -33,3 +33,18 @@ data class TodoGroup(
     val createdAt: Long = System.currentTimeMillis(),
     val isPinned: Boolean = false
 ) : Parcelable
+
+data class BackupSettings(
+    val themeMode: String,
+    val aiRewriteType: String,
+    val pdfIncludeStatus: Boolean,
+    val pdfIncludeFavorites: Boolean,
+    val pdfIncludeSummary: Boolean,
+    val moveDoneToBottom: Boolean
+)
+
+data class BackupData(
+    val version: Int = 1,
+    val settings: BackupSettings,
+    val groups: List<TodoGroup>
+)

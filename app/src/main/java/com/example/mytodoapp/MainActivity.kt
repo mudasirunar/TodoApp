@@ -102,6 +102,7 @@ class MainActivity : AppCompatActivity() {
                         ) {
                             composable("dashboard") { backStackEntry ->
                                 val groups by viewModel.groups.collectAsStateWithLifecycle()
+                                val importState by viewModel.importState.collectAsStateWithLifecycle()
                                 val softDeleteGroupId by backStackEntry.savedStateHandle.getStateFlow<String?>(
                                     "soft_delete_group_id",
                                     null
@@ -109,6 +110,8 @@ class MainActivity : AppCompatActivity() {
 
                                 DashboardScreen(
                                     groups = groups,
+                                    importState = importState,
+                                    onResetImportState = { viewModel.resetImportState() },
                                     softDeleteGroupId = softDeleteGroupId,
                                     onSoftDeleteHandled = {
                                         backStackEntry.savedStateHandle.remove<String>("soft_delete_group_id")
@@ -143,7 +146,13 @@ class MainActivity : AppCompatActivity() {
                                     onPdfConfigChange = { viewModel.savePdfConfig(it) },
                                     moveDoneToBottom = moveDoneToBottom ?: false,
                                     onMoveDoneToBottomChange = { viewModel.saveMoveDoneToBottom(it) },
-                                    onBack = { navController.popBackStack() }
+                                    viewModel = viewModel,
+                                    onBack = { navController.popBackStack() },
+                                    onNavigateToDashboard = {
+                                        navController.navigate("dashboard") {
+                                            popUpTo(0) { inclusive = true }
+                                        }
+                                    }
                                 )
                             }
 

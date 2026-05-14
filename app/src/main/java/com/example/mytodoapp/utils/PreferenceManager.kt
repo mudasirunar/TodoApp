@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.mytodoapp.components.RewriteType
@@ -29,11 +30,14 @@ class PreferenceManager(private val context: Context) {
 
     companion object {
         val THEME_MODE_KEY = stringPreferencesKey("theme_mode")
+        val MOVE_DONE_TO_BOTTOM_KEY = booleanPreferencesKey("move_done_to_bottom")
         val AI_REWRITE_TYPE_KEY = stringPreferencesKey("ai_rewrite_type")
         val PDF_INCLUDE_STATUS_KEY = booleanPreferencesKey("pdf_include_status")
         val PDF_INCLUDE_FAVORITES_KEY = booleanPreferencesKey("pdf_include_favorites")
         val PDF_INCLUDE_SUMMARY_KEY = booleanPreferencesKey("pdf_include_summary")
-        val MOVE_DONE_TO_BOTTOM_KEY = booleanPreferencesKey("move_done_to_bottom")
+        
+        val LAST_BACKUP_TIME_KEY = longPreferencesKey("last_backup_time")
+        val LAST_BACKUP_SOURCE_KEY = stringPreferencesKey("last_backup_source")
     }
 
     val themeMode: Flow<ThemeMode> = context.dataStore.data.map { preferences ->
@@ -66,6 +70,9 @@ class PreferenceManager(private val context: Context) {
         preferences[MOVE_DONE_TO_BOTTOM_KEY] ?: false
     }
 
+    val lastBackupTime: Flow<Long> = context.dataStore.data.map { it[LAST_BACKUP_TIME_KEY] ?: 0L }
+    val lastBackupSource: Flow<String?> = context.dataStore.data.map { it[LAST_BACKUP_SOURCE_KEY] }
+
     suspend fun saveThemeMode(mode: ThemeMode) {
         context.dataStore.edit { preferences ->
             preferences[THEME_MODE_KEY] = mode.name
@@ -89,6 +96,19 @@ class PreferenceManager(private val context: Context) {
     suspend fun saveMoveDoneToBottom(value: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[MOVE_DONE_TO_BOTTOM_KEY] = value
+        }
+    }
+
+    suspend fun saveLastBackupInfo(time: Long, source: String) {
+        context.dataStore.edit { preferences ->
+            preferences[LAST_BACKUP_TIME_KEY] = time
+            preferences[LAST_BACKUP_SOURCE_KEY] = source
+        }
+    }
+
+    suspend fun clearAll() {
+        context.dataStore.edit { preferences ->
+            preferences.clear()
         }
     }
 }

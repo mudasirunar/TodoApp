@@ -10,8 +10,11 @@ import com.example.mytodoapp.data.TodoGroupEntity
 import com.example.mytodoapp.components.RewriteType
 import com.example.mytodoapp.data.TodoStatus
 import com.example.mytodoapp.data.TodoTask
+import com.example.mytodoapp.data.BackupData
+import com.example.mytodoapp.data.BackupSettings
 import com.example.mytodoapp.utils.ThemeMode
 import com.example.mytodoapp.utils.PreferenceManager
+import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -20,7 +23,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.InputStreamReader
+import java.io.OutputStreamWriter
+import java.io.InputStream
+import java.io.OutputStream
 
 class RowHistory(initialText: String) {
     private val maxHistory = 30
@@ -74,6 +83,86 @@ class TodoViewModel(
     private val preferenceManager: PreferenceManager
 ) : ViewModel() {
 
+    private val backupManager = com.example.mytodoapp.utils.BackupManager(todoDao, preferenceManager)
+
+    private val _importState = MutableStateFlow<com.example.mytodoapp.utils.ImportState>(com.example.mytodoapp.utils.ImportState.Idle)
+    val importState: StateFlow<com.example.mytodoapp.utils.ImportState> = _importState.asStateFlow()
+
+    fun resetImportState() {
+        _importState.value = com.example.mytodoapp.utils.ImportState.Idle
+    }
+
+    private suspend fun getBackupData(): BackupData {
+        val currentGroups = groups.value ?: emptyList()
+        
+        // Fetch actual values from PreferenceManager to ensure they are the latest persisted ones
+        val theme = preferenceManager.themeMode.first()
+        val aiStyle = preferenceManager.aiRewriteType.first()
+        val pdf = preferenceManager.pdfConfig.first()
+        val moveDone = preferenceManager.moveDoneToBottom.first()
+
+        val currentSettings = BackupSettings(
+            themeMode = theme.name,
+            aiRewriteType = aiStyle.name,
+            pdfIncludeStatus = pdf.includeStatus,
+            pdfIncludeFavorites = pdf.includeFavorites,
+            pdfIncludeSummary = pdf.includeSummary,
+            moveDoneToBottom = moveDone
+        )
+
+        return BackupData(
+            version = 1,
+            settings = currentSettings,
+            groups = currentGroups
+        )
+    }
+
+    suspend fun exportDatabase(outputStream: OutputStream): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                backupManager.exportToLocal(outputStream, getBackupData())
+                saveLastBackupInfo("Local Device")
+                true
+            } catch (e: Exception) {
+                e.printStackTrace()
+                false
+            }
+        }
+    }
+
+    suspend fun exportDatabaseDrive(context: android.content.Context): java.io.File {
+        val file = backupManager.exportToDriveZip(context, getBackupData())
+        saveLastBackupInfo("Google Drive")
+        return file
+    }
+
+    private fun saveLastBackupInfo(source: String) {
+        viewModelScope.launch {
+            preferenceManager.saveLastBackupInfo(System.currentTimeMillis(), source)
+        }
+    }
+
+    fun importDatabase(inputStream: InputStream) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _importState.value = com.example.mytodoapp.utils.ImportState.Loading
+            val result = backupManager.importDatabase(inputStream)
+            
+            // If import was successful, refresh the local UI states from PreferenceManager
+            if (result is com.example.mytodoapp.utils.ImportState.Success) {
+                updateStatesFromPrefs()
+            }
+            
+            _importState.value = result
+        }
+    }
+
+    private suspend fun updateStatesFromPrefs() {
+        _themeMode.value = preferenceManager.themeMode.first()
+        _aiRewriteType.value = preferenceManager.aiRewriteType.first()
+        _pdfConfig.value = preferenceManager.pdfConfig.first()
+        _moveDoneToBottom.value = preferenceManager.moveDoneToBottom.first()
+    }
+
     // StateFlow holding the list of TodoGroups
     val groups: StateFlow<List<TodoGroup>?> = todoDao.getAllGroups()
         .map { entities ->
@@ -106,6 +195,13 @@ class TodoViewModel(
 
     private val _moveDoneToBottom = MutableStateFlow<Boolean?>(null)
     val moveDoneToBottom: StateFlow<Boolean?> = _moveDoneToBottom.asStateFlow()
+
+    val lastBackupTime = preferenceManager.lastBackupTime.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), 0L
+    )
+    val lastBackupSource = preferenceManager.lastBackupSource.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), null
+    )
 
     init {
         viewModelScope.launch {
@@ -313,6 +409,30 @@ class TodoViewModel(
                     isPinned = !group.isPinned
                 )
             )
+        }
+    }
+    fun resetApp(onComplete: () -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            // Clear Database
+            todoDao.deleteAllGroups()
+            
+            // Clear Preferences
+            preferenceManager.clearAll()
+            
+            // Reset ViewModel states to defaults
+            _themeMode.value = ThemeMode.SYSTEM
+            _aiRewriteType.value = RewriteType.Standard
+            _pdfConfig.value = com.example.mytodoapp.utils.PdfConfig(
+                includeStatus = true,
+                includeFavorites = true,
+                includeSummary = true
+            )
+            _moveDoneToBottom.value = false
+            
+            // Post completion back to main thread
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                onComplete()
+            }
         }
     }
 }
