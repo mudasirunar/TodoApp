@@ -370,20 +370,6 @@ class TodoViewModel(
         )
     }
 
-    fun insertGroup(group: TodoGroup) {
-        viewModelScope.launch(Dispatchers.IO) {
-            todoDao.insertGroup(
-                TodoGroupEntity(
-                    id = group.id,
-                    title = group.title,
-                    tasks = group.tasks,
-                    createdAt = group.createdAt,
-                    isPinned = group.isPinned
-                )
-            )
-        }
-    }
-
     fun deleteGroup(group: TodoGroup) {
         viewModelScope.launch(Dispatchers.IO) {
             todoDao.deleteGroup(
