@@ -42,6 +42,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -69,6 +70,19 @@ import com.example.mytodoapp.components.AiRewriteOptionsDialog
 import com.example.mytodoapp.components.RewriteType
 import com.example.mytodoapp.components.SwipeTutorialDialog
 import com.example.mytodoapp.components.TodoAlertDialog
+import com.example.mytodoapp.ui.viewmodel.SpeechViewModel
+import com.example.mytodoapp.utils.SpeechRecognitionManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.Velocity
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.mytodoapp.components.VoiceInputBottomSheet
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -109,6 +123,7 @@ fun AddTodoScreen(
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val haptic = LocalHapticFeedback.current
     val view = LocalView.current
     val titleFocusRequester = remember { FocusRequester() }
@@ -188,6 +203,51 @@ fun AddTodoScreen(
 
     val scope = rememberCoroutineScope()
     
+    // SPEECH-TO-TEXT SETUP
+    val speechManager = remember { SpeechRecognitionManager(context) }
+    val speechViewModel: SpeechViewModel = viewModel(
+        factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+            override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+                return SpeechViewModel(speechManager) as T
+            }
+        }
+    )
+    val speechState by speechViewModel.uiState.collectAsStateWithLifecycle()
+    var showVoiceSheet by remember { mutableStateOf(false) }
+    var taskTargetingVoice by remember { mutableStateOf<String?>(null) }
+    var showApplyVoiceDialog by remember { mutableStateOf(false) }
+    var pendingVoiceText by remember { mutableStateOf("") }
+
+    // Smart Append logic
+    val smartCombine = { existing: String, new: String ->
+        if (existing.isBlank()) new
+        else {
+            val trimmedExisting = existing.trimEnd()
+            val lastChar = trimmedExisting.lastOrNull()
+            
+            // Check if it ends with punctuation that should be followed by a space
+            val needsSpace = lastChar != null && !lastChar.isWhitespace() && lastChar != '\n'
+            
+            val separator = when {
+                lastChar == '\n' -> ""
+                needsSpace -> " "
+                else -> ""
+            }
+            trimmedExisting + separator + new.trim()
+        }
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            showVoiceSheet = true
+            speechViewModel.startListening()
+        } else {
+            Toast.makeText(context, "Microphone permission is required for voice input", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     // ✅ OPTIMIZATION 5: Initialize all focus requesters once
     val focusMap = remember {
         mutableStateMapOf<String, FocusRequester>().apply {
@@ -705,6 +765,17 @@ fun AddTodoScreen(
                         },
                         onClearError = { taskId ->
                             aiErrors.remove(taskId)
+                        },
+                        onVoiceInput = { taskId ->
+                            taskTargetingVoice = taskId
+                            keyboardController?.hide()
+                            focusManager.clearFocus()
+                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                                showVoiceSheet = true
+                                speechViewModel.startListening()
+                            } else {
+                                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            }
                         }
                     )
 
@@ -730,6 +801,96 @@ fun AddTodoScreen(
                 taskForAiDialog = null
             },
             onDismiss = { taskForAiDialog = null }
+        )
+    }
+
+    // Voice Input Bottom Sheet
+    if (showVoiceSheet) {
+        VoiceInputBottomSheet(
+            state = speechState,
+            onStartListening = { speechViewModel.startListening() },
+            onStopListening = { speechViewModel.stopListening() },
+            onPauseListening = { speechViewModel.pauseListening() },
+            onResumeListening = { speechViewModel.resumeListening() },
+            onCancel = {
+                showVoiceSheet = false
+                speechViewModel.reset()
+            },
+            onRewriteWithAi = { text -> speechViewModel.rewriteWithAi(text) },
+            onConfirm = { text ->
+                val targetTask = tasks.find { it.id == taskTargetingVoice }
+                if (targetTask != null && targetTask.text.isNotBlank()) {
+                    pendingVoiceText = text
+                    showApplyVoiceDialog = true
+                } else {
+                    taskTargetingVoice?.let { taskId ->
+                        tasks = tasks.map { if (it.id == taskId) it.copy(text = text) else it }
+                        viewModel.pushHistory(taskId, text)
+                    }
+                    showVoiceSheet = false
+                    speechViewModel.reset()
+                }
+            },
+            onDismiss = {
+                showVoiceSheet = false
+                speechViewModel.reset()
+            }
+        )
+    }
+
+    if (showApplyVoiceDialog) {
+        AlertDialog(
+            onDismissRequest = { showApplyVoiceDialog = false },
+            title = { 
+                Text(
+                    "Apply Voice Text", 
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.onSurface 
+                ) 
+            },
+            text = { 
+                Text(
+                    "You already have some text in this task. How would you like to apply the new transcription?",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                ) 
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        taskTargetingVoice?.let { taskId ->
+                            tasks = tasks.map { 
+                                if (it.id == taskId) it.copy(text = smartCombine(it.text, pendingVoiceText)) 
+                                else it 
+                            }
+                            val updatedText = tasks.find { it.id == taskId }?.text ?: ""
+                            viewModel.pushHistory(taskId, updatedText)
+                        }
+                        showApplyVoiceDialog = false
+                        showVoiceSheet = false
+                        speechViewModel.reset()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Text("Append", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        taskTargetingVoice?.let { taskId ->
+                            tasks = tasks.map { if (it.id == taskId) it.copy(text = pendingVoiceText) else it }
+                            viewModel.pushHistory(taskId, pendingVoiceText)
+                        }
+                        showApplyVoiceDialog = false
+                        showVoiceSheet = false
+                        speechViewModel.reset()
+                    }
+                ) {
+                    Text("Replace", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                }
+            },
+            shape = RoundedCornerShape(28.dp),
+            containerColor = MaterialTheme.colorScheme.surface
         )
     }
 }
@@ -790,6 +951,8 @@ private fun TasksHeaderSection(
     }
 }
 
+
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun TaskEditRow(
@@ -819,7 +982,8 @@ fun TaskEditRow(
     onImeAction: () -> Unit,
     onAiRewrite: (String, RewriteType) -> Unit,
     onAiLongClick: (String) -> Unit,
-    onClearError: (String) -> Unit
+    onClearError: (String) -> Unit,
+    onVoiceInput: (String) -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
     val focusManager = LocalFocusManager.current
@@ -827,10 +991,28 @@ fun TaskEditRow(
     val dismissState = rememberSwipeToDismissBoxState()
     val currentValue = dismissState.currentValue
 
-    // ✅ PERF FIX: Local text state prevents parent recomposition on every keystroke
-    // ✅ CURSOR FIX: Use TextFieldValue to control cursor position
+    var isFocused by remember { mutableStateOf(false) }
+
+    // Custom NestedScrollConnection to prevent parent from scrolling when this task is being edited
+    val nestedScrollConnection = remember(isFocused) {
+        object : NestedScrollConnection {
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                // Only consume scroll if this task is focused, to allow normal list scrolling otherwise
+                return if (isFocused) available else androidx.compose.ui.geometry.Offset.Zero
+            }
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                return if (isFocused) available else Velocity.Zero
+            }
+        }
+    }
+
     var localTextFieldValue by remember(task.id) { 
-        mutableStateOf(TextFieldValue(task.text, selection = TextRange(task.text.length))) 
+        mutableStateOf(TextFieldValue(task.text, selection = TextRange(0))) 
     }
     
     // Sync external changes (undo/redo/AI rewrite) into local state
@@ -838,7 +1020,7 @@ fun TaskEditRow(
         if (task.text != localTextFieldValue.text) {
             localTextFieldValue = localTextFieldValue.copy(
                 text = task.text,
-                selection = TextRange(task.text.length)
+                selection = TextRange(0)
             )
         }
     }
@@ -864,8 +1046,6 @@ fun TaskEditRow(
         }
     }
 
-    var isFocused by remember { mutableStateOf(false) }
-
     LaunchedEffect(task.id) {
         onInitHistory(task.text)
     }
@@ -877,8 +1057,8 @@ fun TaskEditRow(
         }
     }
 
-    // ✅ SHAKE ANIMATION LOGIC
-    val shakeAnim = remember { androidx.compose.animation.core.Animatable(0f) }
+    // SHAKE ANIMATION LOGIC
+    val shakeAnim = remember { Animatable(0f) }
     LaunchedEffect(isShaking) {
         if (isShaking) {
             repeat(5) {
@@ -921,7 +1101,6 @@ fun TaskEditRow(
     val currentStatusColor = task.status.color
     val gold = Color(0xFFFFD700)
 
-    // ✅ OPTIMIZATION 12: Remember brush to avoid recreation
     val borderBrush = remember(task.isFavorite, task.status) {
         if (task.isFavorite) {
             Brush.linearGradient(
@@ -1003,78 +1182,83 @@ fun TaskEditRow(
                         Icon(Icons.Default.Star, null, tint = Color(0xFFFFD700), modifier = Modifier.size(24.dp).padding(end = 4.dp))
                     }
 
-                    Box(
-                        modifier = Modifier.weight(1f),
-                        contentAlignment = Alignment.CenterStart
+                    TextField(
+                        value = localTextFieldValue,
+                        onValueChange = { newValue ->
+                            localTextFieldValue = newValue
+                            // Debounced sync to parent — avoids O(N) recomposition per keystroke
+                            debounceJob?.cancel()
+                            debounceJob = scope.launch {
+                                delay(300)
+                                onUpdate(task.copy(text = newValue.text))
+                            }
+                        },
+                        readOnly = isLoading,
+                        modifier = Modifier
+                            .weight(1f)
+                            .focusRequester(focusRequester)
+                            .nestedScroll(nestedScrollConnection)
+                            .onFocusChanged { state ->
+                                isFocused = state.isFocused
+                                if (!state.isFocused) {
+                                    // Immediately sync on focus loss
+                                    debounceJob?.cancel()
+                                    if (localTextFieldValue.text != task.text) {
+                                        onUpdate(task.copy(text = localTextFieldValue.text))
+                                    }
+                                    onPushHistory(localTextFieldValue.text)
+                                }
+                            }
+                            .graphicsLayer {
+                                translationY = if (isMatch && isHighlightActive) bounceOffsetProvider() else 0f
+                                alpha = if (isLoading) 0.5f else 1f
+                            },
+                        visualTransformation = if (isHighlightActive)
+                            SearchHighlightTransformation(highlightQuery, Color(0xFFFFEB3B))
+                        else VisualTransformation.None,
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Sentences,
+                            imeAction = ImeAction.Next
+                        ),
+                        keyboardActions = KeyboardActions(onNext = {
+                            // Flush pending text before IME action
+                            debounceJob?.cancel()
+                            if (localTextFieldValue.text != task.text) {
+                                onUpdate(task.copy(text = localTextFieldValue.text))
+                            }
+                            onImeAction()
+                        }),
+                        placeholder = {
+                            Text(
+                                "What needs to be done?",
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                            )
+                        },
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                            disabledContainerColor = Color.Transparent,
+                            disabledIndicatorColor = Color.Transparent,
+                            disabledTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                        ),
+                        singleLine = false,
+                        maxLines = 5
+                    )
+
+                    IconButton(
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onVoiceInput(task.id)
+                        },
+                        modifier = Modifier.size(36.dp).padding(start = 4.dp)
                     ) {
-                        TextField(
-                            value = localTextFieldValue,
-                            onValueChange = { newValue ->
-                                localTextFieldValue = newValue
-                                // Debounced sync to parent — avoids O(N) recomposition per keystroke
-                                debounceJob?.cancel()
-                                debounceJob = scope.launch {
-                                    delay(300)
-                                    onUpdate(task.copy(text = newValue.text))
-                                }
-                            },
-                            readOnly = isLoading,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .focusRequester(focusRequester)
-                                .onFocusChanged { state ->
-                                    isFocused = state.isFocused
-                                    if (state.isFocused) {
-                                        // ✅ CURSOR FIX: Move to end when focused
-                                        localTextFieldValue = localTextFieldValue.copy(
-                                            selection = TextRange(localTextFieldValue.text.length)
-                                        )
-                                    }
-                                    if (!state.isFocused) {
-                                        // Immediately sync on focus loss
-                                        debounceJob?.cancel()
-                                        if (localTextFieldValue.text != task.text) {
-                                            onUpdate(task.copy(text = localTextFieldValue.text))
-                                        }
-                                        onPushHistory(localTextFieldValue.text)
-                                    }
-                                }
-                                .graphicsLayer {
-                                    translationY = if (isMatch && isHighlightActive) bounceOffsetProvider() else 0f
-                                    alpha = if (isLoading) 0.5f else 1f
-                                },
-                            visualTransformation = if (isHighlightActive)
-                                SearchHighlightTransformation(highlightQuery, Color(0xFFFFEB3B))
-                            else VisualTransformation.None,
-                            keyboardOptions = KeyboardOptions(
-                                capitalization = KeyboardCapitalization.Sentences,
-                                imeAction = ImeAction.Next
-                            ),
-                            keyboardActions = KeyboardActions(onNext = {
-                                // Flush pending text before IME action
-                                debounceJob?.cancel()
-                                if (localTextFieldValue.text != task.text) {
-                                    onUpdate(task.copy(text = localTextFieldValue.text))
-                                }
-                                onImeAction()
-                            }),
-                            placeholder = {
-                                Text(
-                                    "What needs to be done?",
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                                )
-                            },
-                            colors = TextFieldDefaults.colors(
-                                focusedContainerColor = Color.Transparent,
-                                unfocusedContainerColor = Color.Transparent,
-                                focusedIndicatorColor = Color.Transparent,
-                                unfocusedIndicatorColor = Color.Transparent,
-                                disabledContainerColor = Color.Transparent,
-                                disabledIndicatorColor = Color.Transparent,
-                                disabledTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                            ),
-                            singleLine = false,
-                            maxLines = 5
+                        Icon(
+                            imageVector = Icons.Default.Mic,
+                            contentDescription = "Voice Input",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
                         )
                     }
                 }
