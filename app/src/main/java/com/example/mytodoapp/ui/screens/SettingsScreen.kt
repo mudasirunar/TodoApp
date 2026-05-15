@@ -1,5 +1,6 @@
 package com.example.mytodoapp.ui.screens
 
+import android.app.Activity
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -44,6 +45,12 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import android.content.Intent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.Image
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.core.content.FileProvider
 import androidx.compose.runtime.rememberCoroutineScope
@@ -53,6 +60,8 @@ import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.ui.draw.alpha
+import com.example.mytodoapp.utils.PdfConfig
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,8 +70,8 @@ fun SettingsScreen(
     onThemeSelected: (ThemeMode) -> Unit,
     currentAiStyle: RewriteType,
     onAiStyleSelected: (RewriteType) -> Unit,
-    currentPdfConfig: com.example.mytodoapp.utils.PdfConfig,
-    onPdfConfigChange: (com.example.mytodoapp.utils.PdfConfig) -> Unit,
+    currentPdfConfig: PdfConfig,
+    onPdfConfigChange: (PdfConfig) -> Unit,
     moveDoneToBottom: Boolean,
     onMoveDoneToBottomChange: (Boolean) -> Unit,
     viewModel: TodoViewModel,
@@ -75,6 +84,16 @@ fun SettingsScreen(
     
     val lastBackupTime by viewModel.lastBackupTime.collectAsStateWithLifecycle()
     val lastBackupSource by viewModel.lastBackupSource.collectAsStateWithLifecycle()
+
+    val groups by viewModel.groups.collectAsStateWithLifecycle()
+    val hasUserData = groups?.isNotEmpty() == true
+    val hasModifiedSettings = currentAiStyle != RewriteType.Standard ||
+        moveDoneToBottom ||
+        !currentPdfConfig.includeStatus ||
+        !currentPdfConfig.includeFavorites ||
+        !currentPdfConfig.includeSummary
+
+    val canResetApp = hasUserData || hasModifiedSettings
 
     var showResetDialog by remember { mutableStateOf(false) }
     var isResetting by remember { mutableStateOf(false) }
@@ -121,7 +140,7 @@ fun SettingsScreen(
     val driveImportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        if (result.resultCode == android.app.Activity.RESULT_OK) {
+        if (result.resultCode == Activity.RESULT_OK) {
             result.data?.data?.let { uri ->
                 context.contentResolver.openInputStream(uri)?.let { inputStream ->
                     viewModel.importDatabase(inputStream)
@@ -384,6 +403,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(32.dp))
 
             ResetAppSection(
+                canResetApp = canResetApp,
                 onResetClick = { showResetDialog = true }
             )
             
@@ -396,6 +416,7 @@ fun SettingsScreen(
 
 @Composable
 fun ResetAppSection(
+    canResetApp: Boolean,
     onResetClick: () -> Unit
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -414,7 +435,9 @@ fun ResetAppSection(
         )
 
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .alpha(if (canResetApp) 1f else 0.5f),
             shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
@@ -424,7 +447,7 @@ fun ResetAppSection(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onResetClick() }
+                    .clickable(enabled = canResetApp) { onResetClick() }
                     .padding(horizontal = 16.dp, vertical = 16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -647,8 +670,8 @@ fun TaskOrganizationSection(
 
 @Composable
 fun PdfConfigSection(
-    currentConfig: com.example.mytodoapp.utils.PdfConfig,
-    onConfigChange: (com.example.mytodoapp.utils.PdfConfig) -> Unit
+    currentConfig: PdfConfig,
+    onConfigChange: (PdfConfig) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
@@ -962,12 +985,12 @@ fun AppBrandingFooter() {
                 .clip(CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            androidx.compose.foundation.Image(
+            Image(
                 painter = painterResource(id = R.drawable.ic_launcher_background),
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize()
             )
-            androidx.compose.foundation.Image(
+            Image(
                 painter = painterResource(id = R.drawable.ic_launcher_foreground),
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize()
