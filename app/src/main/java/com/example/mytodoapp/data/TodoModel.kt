@@ -21,7 +21,9 @@ data class TodoTask(
     val text: String = "",
     val status: TodoStatus = TodoStatus.ComingUp,
     val isFavorite: Boolean = false,
-    val createdAt: Long = System.currentTimeMillis()
+    val position: Double = 0.0,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
 ) : Parcelable
 
 @Immutable
@@ -31,7 +33,9 @@ data class TodoGroup(
     val title: String = "",
     val tasks: List<TodoTask> = emptyList(),
     val createdAt: Long = System.currentTimeMillis(),
-    val isPinned: Boolean = false
+    val updatedAt: Long = System.currentTimeMillis(),
+    val isPinned: Boolean = false,
+    val isDeleted: Boolean = false
 ) : Parcelable
 
 data class BackupSettings(

@@ -29,12 +29,17 @@ import com.example.mytodoapp.components.RewriteType
 import com.example.mytodoapp.ui.screens.SettingsScreen
 import com.example.mytodoapp.utils.ThemeMode
 import com.example.mytodoapp.utils.PreferenceManager
+import com.google.firebase.auth.FirebaseAuth
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.tasks.await
+import com.example.mytodoapp.sync.SyncManager
+import com.example.mytodoapp.auth.AuthManager
+import com.example.mytodoapp.ui.screens.LoginScreen
 
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         val preferenceManager = PreferenceManager(this)
         
-        // ✅ SPLASH SCREEN: Wait for the theme to be loaded
         val splashScreen = installSplashScreen()
         var isThemeReady by mutableStateOf(false)
         splashScreen.setKeepOnScreenCondition { !isThemeReady }
@@ -44,10 +49,12 @@ class MainActivity : AppCompatActivity() {
 
         val database = TodoDatabase.getDatabase(this)
         val todoDao = database.todoDao()
+        val syncManager = SyncManager(this)
+        val authManager = AuthManager(this.applicationContext, syncManager, preferenceManager)
 
         setContent {
             val viewModel: TodoViewModel = viewModel(
-                factory = TodoViewModelFactory(todoDao, preferenceManager)
+                factory = TodoViewModelFactory(todoDao, preferenceManager, syncManager)
             )
 
             // ✅ OPTIMIZATION: Collect from ViewModel (Optimistic UI) instead of DataStore directly
@@ -56,6 +63,24 @@ class MainActivity : AppCompatActivity() {
             LaunchedEffect(themeMode) {
                 if (themeMode != null) {
                     isThemeReady = true
+                }
+            }
+
+            // ✅ AUTH-BASED SYNC INITIALIZATION
+            val authState by authManager.authState.collectAsState()
+            
+            LaunchedEffect(authState) {
+                if (authState == com.example.mytodoapp.auth.AuthState.AUTHENTICATED || 
+                    authState == com.example.mytodoapp.auth.AuthState.GUEST) {
+                    
+                    val hasMigrated = preferenceManager.hasMigratedToCloud.first()
+                    if (!hasMigrated) {
+                        syncManager.migrateLocalDataToCloud()
+                        preferenceManager.markMigratedToCloud()
+                    }
+                    syncManager.startRealtimeSync()
+                } else {
+                    syncManager.stopRealtimeSync()
                 }
             }
 
@@ -75,10 +100,12 @@ class MainActivity : AppCompatActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                         val navController = rememberNavController()
+                        
+                        val startDestination = if (authManager.currentUser == null) "login" else "dashboard"
 
                         NavHost(
                             navController,
-                            startDestination = "dashboard",
+                            startDestination = startDestination,
                             enterTransition = { 
                                 slideInHorizontally(animationSpec = tween(400)) { it } + fadeIn(tween(400)) 
                             },
@@ -100,9 +127,22 @@ class MainActivity : AppCompatActivity() {
                                 slideOutHorizontally(animationSpec = tween(400)) { it } + fadeOut(tween(400)) 
                             }
                         ) {
+                            composable("login") {
+                                LoginScreen(
+                                    authManager = authManager,
+                                    syncManager = syncManager,
+                                    onLoginSuccess = {
+                                        navController.navigate("dashboard") {
+                                            popUpTo("login") { inclusive = true }
+                                        }
+                                    }
+                                )
+                            }
+                            
                             composable("dashboard") { backStackEntry ->
-                                val groups by viewModel.groups.collectAsStateWithLifecycle()
+                                val groups by viewModel.activeGroups.collectAsStateWithLifecycle()
                                 val importState by viewModel.importState.collectAsStateWithLifecycle()
+                                val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
                                 val softDeleteGroupId by backStackEntry.savedStateHandle.getStateFlow<String?>(
                                     "soft_delete_group_id",
                                     null
@@ -116,6 +156,8 @@ class MainActivity : AppCompatActivity() {
                                     onSoftDeleteHandled = {
                                         backStackEntry.savedStateHandle.remove<String>("soft_delete_group_id")
                                     },
+                                    authManager = authManager,
+                                    isSyncing = isSyncing,
                                     onNavigateToEdit = { group, searchQuery ->
                                         navController.navigate("edit/${group.id}?query=$searchQuery")
                                     },
@@ -136,7 +178,6 @@ class MainActivity : AppCompatActivity() {
                                 val currentAiStyle by viewModel.aiRewriteType.collectAsStateWithLifecycle()
                                 val currentPdfConfig by viewModel.pdfConfig.collectAsStateWithLifecycle()
                                 val moveDoneToBottom by viewModel.moveDoneToBottom.collectAsStateWithLifecycle()
-                                
                                 SettingsScreen(
                                     currentTheme = currentTheme ?: ThemeMode.SYSTEM,
                                     onThemeSelected = { viewModel.saveThemeMode(it) },
@@ -147,9 +188,16 @@ class MainActivity : AppCompatActivity() {
                                     moveDoneToBottom = moveDoneToBottom ?: false,
                                     onMoveDoneToBottomChange = { viewModel.saveMoveDoneToBottom(it) },
                                     viewModel = viewModel,
+                                    authManager = authManager,
+                                    syncManager = syncManager,
                                     onBack = { navController.popBackStack() },
                                     onNavigateToDashboard = {
                                         navController.navigate("dashboard") {
+                                            popUpTo(0) { inclusive = true }
+                                        }
+                                    },
+                                    onNavigateToLogin = {
+                                        navController.navigate("login") {
                                             popUpTo(0) { inclusive = true }
                                         }
                                     }
@@ -175,19 +223,19 @@ class MainActivity : AppCompatActivity() {
                                 }
                             ) { backStack ->
                                 val groupId = backStack.arguments?.getString("groupId") ?: ""
-                                val groups by viewModel.groups.collectAsStateWithLifecycle()
+                                val groups by viewModel.allGroups.collectAsStateWithLifecycle()
                                 val previewGroup by viewModel.previewGroup.collectAsStateWithLifecycle()
                                 val pdfConfig by viewModel.pdfConfig.collectAsStateWithLifecycle()
 
                                 // Use previewGroup if available (unsaved data), otherwise fallback to DB
-                                val group = previewGroup ?: groups?.find { it.id == groupId } ?: TodoGroup(id = groupId)
+                                val group = previewGroup ?: groups.find { it.id == groupId } ?: TodoGroup(id = groupId)
 
                                 PdfPreviewScreen(
                                     group = group,
                                     config = pdfConfig ?: com.example.mytodoapp.utils.PdfConfig(),
-                                    onBack = { 
+                                    onBack = {
                                         viewModel.setPreviewGroup(null) // Clean up
-                                        navController.popBackStack() 
+                                        navController.popBackStack()
                                     }
                                 )
                             }
@@ -203,20 +251,10 @@ class MainActivity : AppCompatActivity() {
                                     }
                                 )
                             ) { backStack ->
-                                val groups by viewModel.groups.collectAsStateWithLifecycle()
-                                if (groups == null) {
-                                    androidx.compose.foundation.layout.Box(
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentAlignment = androidx.compose.ui.Alignment.Center
-                                    ) {
-                                        androidx.compose.material3.CircularProgressIndicator()
-                                    }
-                                    return@composable
-                                }
+                                val groups by viewModel.allGroups.collectAsStateWithLifecycle()
                                 val id = backStack.arguments?.getString("groupId") ?: ""
                                 val query = backStack.arguments?.getString("query") ?: ""
-                                val existing = groups?.find { it.id == id } ?: TodoGroup(id = id)
-
+                                val existing = groups.find { it.id == id } ?: TodoGroup(id = id)
                                 AddTodoScreen(
                                     existingGroup = existing,
                                     highlightQuery = query,

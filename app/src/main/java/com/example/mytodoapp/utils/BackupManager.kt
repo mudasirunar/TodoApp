@@ -5,6 +5,7 @@ import com.example.mytodoapp.components.RewriteType
 import com.example.mytodoapp.data.BackupData
 import com.example.mytodoapp.data.TodoDao
 import com.example.mytodoapp.data.TodoGroupEntity
+import com.example.mytodoapp.sync.SyncState
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -100,17 +101,26 @@ class BackupManager(
                 val currentLocalGroups = todoDao.getAllGroups().first()
 
                 backupData.groups.forEach { importedGroup ->
-                    // 1. Try to find an exact ID match first (Highest Accuracy)
-                    // 2. If no ID match, fall back to Title match (User intent for same project)
-                    val existingLocalGroup = currentLocalGroups.find { it.id == importedGroup.id }
-                        ?: currentLocalGroups.find { it.title == importedGroup.title }
+                    val existingLocalGroup = currentLocalGroups.find { it.group.id == importedGroup.id }
+                        ?: currentLocalGroups.find { it.group.title == importedGroup.title }
+
+                    val now = System.currentTimeMillis()
+                    val deviceId = preferenceManager.getOrCreateDeviceId()
 
                     if (existingLocalGroup != null) {
-                        val initialLocalTasks = existingLocalGroup.tasks
+                        val initialLocalTasks = existingLocalGroup.tasks.map { taskEntity ->
+                            com.example.mytodoapp.data.TodoTask(
+                                id = taskEntity.id,
+                                text = taskEntity.text,
+                                status = taskEntity.status,
+                                isFavorite = taskEntity.isFavorite,
+                                position = taskEntity.position,
+                                createdAt = taskEntity.createdAt
+                            )
+                        }
                         val localTasksToSave = initialLocalTasks.toMutableList()
 
                         importedGroup.tasks.forEach { importedTask ->
-                            // Check if a task with the same ID or same content already existed locally BEFORE this import
                             val isDuplicate = initialLocalTasks.any { localTask ->
                                 localTask.id == importedTask.id || (
                                     localTask.text == importedTask.text &&
@@ -127,26 +137,60 @@ class BackupManager(
                             }
                         }
 
-                        todoDao.insertGroup(
-                            TodoGroupEntity(
-                                id = existingLocalGroup.id,
-                                title = existingLocalGroup.title,
-                                tasks = localTasksToSave,
-                                createdAt = existingLocalGroup.createdAt,
-                                isPinned = existingLocalGroup.isPinned || importedGroup.isPinned
-                            )
+                        val groupEntity = TodoGroupEntity(
+                            id = existingLocalGroup.group.id,
+                            title = existingLocalGroup.group.title,
+                            createdAt = existingLocalGroup.group.createdAt,
+                            isPinned = existingLocalGroup.group.isPinned || importedGroup.isPinned,
+                            updatedAt = now,
+                            deviceId = deviceId,
+                            syncState = SyncState.PENDING
                         )
 
-                    } else {
-                        todoDao.insertGroup(
-                            TodoGroupEntity(
-                                id = importedGroup.id,
-                                title = importedGroup.title,
-                                tasks = importedGroup.tasks,
-                                createdAt = importedGroup.createdAt,
-                                isPinned = importedGroup.isPinned
+                        val taskEntities = localTasksToSave.map { task ->
+                            com.example.mytodoapp.data.TodoTaskEntity(
+                                id = task.id,
+                                groupId = groupEntity.id,
+                                text = task.text,
+                                status = task.status,
+                                isFavorite = task.isFavorite,
+                                position = task.position,
+                                createdAt = task.createdAt,
+                                updatedAt = now,
+                                deviceId = deviceId,
+                                syncState = SyncState.PENDING
                             )
+                        }
+
+                        todoDao.insertGroupWithTasks(groupEntity, taskEntities)
+
+                    } else {
+                        val groupEntity = TodoGroupEntity(
+                            id = importedGroup.id,
+                            title = importedGroup.title,
+                            createdAt = importedGroup.createdAt,
+                            isPinned = importedGroup.isPinned,
+                            updatedAt = now,
+                            deviceId = deviceId,
+                            syncState = SyncState.PENDING
                         )
+
+                        val taskEntities = importedGroup.tasks.map { task ->
+                            com.example.mytodoapp.data.TodoTaskEntity(
+                                id = task.id,
+                                groupId = groupEntity.id,
+                                text = task.text,
+                                status = task.status,
+                                isFavorite = task.isFavorite,
+                                position = task.position,
+                                createdAt = task.createdAt,
+                                updatedAt = now,
+                                deviceId = deviceId,
+                                syncState = SyncState.PENDING
+                            )
+                        }
+
+                        todoDao.insertGroupWithTasks(groupEntity, taskEntities)
                         tasksImported += importedGroup.tasks.size
                     }
                 }
