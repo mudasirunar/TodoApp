@@ -14,7 +14,7 @@ import java.util.Locale
 class SpeechRecognitionManager(private val context: Context) {
 
     private var speechRecognizer: SpeechRecognizer? = null
-    
+
     private var listener: SpeechRecognitionListener? = null
 
     interface SpeechRecognitionListener {
@@ -92,6 +92,11 @@ class SpeechRecognitionManager(private val context: Context) {
                 SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Recognition service busy"
                 SpeechRecognizer.ERROR_SERVER -> "Server error"
                 SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech input"
+                10 -> "Too many requests"
+                11 -> "Server disconnected"
+                12 -> "Language not supported"
+                13 -> "Offline language model unavailable. Please download it in Google settings."
+                14 -> "Cannot check offline support"
                 else -> "Unknown error: $error"
             }
             listener?.onError(errorMessage)
