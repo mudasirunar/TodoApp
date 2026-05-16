@@ -35,15 +35,15 @@ This project follows the **MVVM (Model-View-ViewModel)** architectural pattern t
 
 ## 📸 Screenshots
 
-| Workspace Dashboard | Task Editing & Highlights | PDF Preview & Export |
-| :---: | :---: | :---: |
-| <img src="app/screenshots/home_screen.jpg" width="250"> | <img src="app/screenshots/search_highligth.png" width="250"> | <img src="app/screenshots/pdf_preview_screen.png" width="250"> |
-| *View collections, pin favorites, and track progress.* | *Search text dynamically highlights inside tasks.* | *Preview beautifully formatted PDF exports.* |
+|                   Workspace Dashboard                   | Task Editing & Highlights | PDF Preview & Export |
+|:-------------------------------------------------------:| :---: | :---: |
+| <img src="app/screenshots/home_screen.png" width="250"> | <img src="app/screenshots/search_highligth.png" width="250"> | <img src="app/screenshots/pdf_preview_screen.png" width="250"> |
+| *View collections, pin favorites, and track progress.*  | *Search text dynamically highlights inside tasks.* | *Preview beautifully formatted PDF exports.* |
 
-| Task Screen | AI Rewrite Styling |
-| :---: | :---: |
-| <img src="app/screenshots/tasks_screen.png" width="250"> | <img src="app/screenshots/ai_rewrite_styling_dialog.jpg" width="250"> |
-| *Manage tasks with undo/redo, status tracking, and AI.* | *Choose professional or casual AI rewrite styles.* |
+| Task Screen |                          AI Rewrite Styling                           |
+| :---: |:---------------------------------------------------------------------:|
+| <img src="app/screenshots/tasks_screen.png" width="250"> | <img src="app/screenshots/ai_rewrite_styling_dialog.png" width="250"> |
+| *Manage tasks with undo/redo, status tracking, and AI.* |          *Choose professional or casual AI rewrite styles.*           |
 
 ## 🚀 Installation
 
