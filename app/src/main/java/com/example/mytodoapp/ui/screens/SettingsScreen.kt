@@ -58,10 +58,13 @@ import kotlinx.coroutines.launch
 
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.ui.draw.alpha
 import com.example.mytodoapp.utils.PdfConfig
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -75,8 +78,11 @@ fun SettingsScreen(
     moveDoneToBottom: Boolean,
     onMoveDoneToBottomChange: (Boolean) -> Unit,
     viewModel: TodoViewModel,
+    authManager: com.example.mytodoapp.auth.AuthManager,
+    syncManager: com.example.mytodoapp.sync.SyncManager,
     onBack: () -> Unit,
-    onNavigateToDashboard: () -> Unit
+    onNavigateToDashboard: () -> Unit,
+    onNavigateToLogin: () -> Unit
 ) {
     val context = LocalContext.current
     val importState by viewModel.importState.collectAsStateWithLifecycle()
@@ -85,7 +91,7 @@ fun SettingsScreen(
     val lastBackupTime by viewModel.lastBackupTime.collectAsStateWithLifecycle()
     val lastBackupSource by viewModel.lastBackupSource.collectAsStateWithLifecycle()
 
-    val groups by viewModel.groups.collectAsStateWithLifecycle()
+    val groups by viewModel.activeGroups.collectAsStateWithLifecycle()
     val hasUserData = groups?.isNotEmpty() == true
     val hasModifiedSettings = currentAiStyle != RewriteType.Standard ||
         moveDoneToBottom ||
@@ -207,7 +213,6 @@ fun SettingsScreen(
                                 if (isDriveInstalled()) {
                                     driveExportLauncher.launch(shareIntent)
                                 } else {
-                                    // Fallback to standard chooser if Drive app is missing
                                     context.startActivity(Intent.createChooser(shareIntent, "Save Backup to Drive"))
                                 }
                             } catch (e: Exception) {
@@ -265,7 +270,6 @@ fun SettingsScreen(
                             }
                             driveImportLauncher.launch(driveIntent)
                         } else {
-                            // Fallback: Use standard picker which also shows Drive if it's there
                             importLauncher.launch(arrayOf("application/json", "application/zip", "application/x-zip-compressed", "*/*"))
                         }
                     },
@@ -348,7 +352,7 @@ fun SettingsScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent, // Synchronize with Scaffold background
+                    containerColor = Color.Transparent, 
                     titleContentColor = MaterialTheme.colorScheme.primary,
                     navigationIconContentColor = MaterialTheme.colorScheme.primary
                 )
@@ -398,6 +402,15 @@ fun SettingsScreen(
                 lastBackupSource = lastBackupSource,
                 onExport = { showExportDestinationDialog = true },
                 onImport = { showImportDestinationDialog = true }
+            )
+            
+            Spacer(modifier = Modifier.height(32.dp))
+
+            AccountSection(
+                authManager = authManager,
+                syncManager = syncManager,
+                onNavigateToLogin = onNavigateToLogin,
+                onNavigateToDashboard = onNavigateToDashboard
             )
             
             Spacer(modifier = Modifier.height(32.dp))
@@ -922,7 +935,6 @@ fun ThemeSection(
             modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
         )
 
-        // Segmented Control for Theme Options
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1014,6 +1026,212 @@ fun AppBrandingFooter() {
                 color = Color.Gray,
                 lineHeight = 8.sp
             )
+        }
+    }
+}
+
+@Composable
+fun AccountSection(
+    authManager: com.example.mytodoapp.auth.AuthManager,
+    syncManager: com.example.mytodoapp.sync.SyncManager,
+    onNavigateToLogin: () -> Unit,
+    onNavigateToDashboard: () -> Unit
+) {
+    val authState by authManager.authState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var isLoading by remember { mutableStateOf(false) }
+    var showSignOutDialog by remember { mutableStateOf(false) }
+
+    if (showSignOutDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!isLoading) showSignOutDialog = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(28.dp),
+            title = {
+                Text(
+                    "Sign Out",
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            text = {
+                if (isLoading) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Text("Signing out...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                } else {
+                    Text(
+                        "Are you sure you want to sign out?",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                if (!isLoading) {
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                isLoading = true
+                                val result = authManager.signOut()
+                                isLoading = false
+                                if (result.isSuccess) {
+                                    showSignOutDialog = false
+                                    onNavigateToLogin()
+                                } else {
+                                    Toast.makeText(context, "Sign out failed: ${result.exceptionOrNull()?.message}", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        shape = RoundedCornerShape(28.dp)
+                    ) {
+                        Text("Sign Out", fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            dismissButton = {
+                if (!isLoading) {
+                    TextButton(
+                        onClick = { showSignOutDialog = false },
+                        shape = RoundedCornerShape(28.dp)
+                    ) {
+                        Text(
+                            "Cancel",
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+        )
+    }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "Account",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
+        )
+
+        val isGuest = authState == com.example.mytodoapp.auth.AuthState.GUEST || authState == com.example.mytodoapp.auth.AuthState.UNAUTHENTICATED
+
+        Text(
+            text = if (isGuest) "Sign in to safely backup and sync your data across devices." else "You’re signed in.",
+            fontSize = 14.sp,
+            color = Color.Gray,
+            modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
+        )
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+            ),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
+        ) {
+            if (isGuest) {
+                // Guest View: Upgrade Button
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            scope.launch {
+                                isLoading = true
+                                val result = authManager.signInWithGoogle(context)
+                                isLoading = false
+                                if (result.isSuccess) {
+                                    syncManager.waitForInitialSettings()
+                                    onNavigateToDashboard()
+                                } else {
+                                    Toast.makeText(context, "Login failed: ${result.exceptionOrNull()?.message}", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                        .padding(horizontal = 16.dp, vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (isLoading) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.primary)
+                    } else {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_google),
+                            contentDescription = "Sign in",
+                            tint = Color.Unspecified,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Login with Google",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            } else {
+                // Logged In View: Sign Out
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showSignOutDialog = true }
+                        .padding(horizontal = 16.dp, vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val user by authManager.currentUserFlow.collectAsStateWithLifecycle()
+                    val googleProvider = user?.providerData?.find { it.providerId == "google.com" }
+                    val displayName = googleProvider?.displayName ?: user?.displayName
+                    val email = googleProvider?.email ?: user?.email
+                    val photoUrl = googleProvider?.photoUrl ?: user?.photoUrl
+
+                    if (photoUrl != null) {
+                        AsyncImage(
+                            model = ImageRequest.Builder(context)
+                                .data(photoUrl)
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = "Profile Picture",
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = "Profile",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = displayName ?: "Authenticated User",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = email ?: "Sign Out to switch accounts",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Text(
+                        text = "Sign Out",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(start = 8.dp)
+                    )
+                }
+            }
         }
     }
 }

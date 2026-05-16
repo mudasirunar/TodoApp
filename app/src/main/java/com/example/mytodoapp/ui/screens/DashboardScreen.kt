@@ -13,62 +13,129 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyItemScope
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SearchOff
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.PushPin
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.example.mytodoapp.components.TodoAlertDialog
 import com.example.mytodoapp.data.TodoGroup
 import com.example.mytodoapp.data.TodoStatus
+import com.example.mytodoapp.utils.ImportState
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-
-import com.example.mytodoapp.utils.ImportState
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.mytodoapp.auth.AuthState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
-    groups: List<TodoGroup>?,
+    groups: List<TodoGroup>,
     importState: ImportState = ImportState.Idle,
     onResetImportState: () -> Unit = {},
     softDeleteGroupId: String? = null,
     onSoftDeleteHandled: () -> Unit = {},
+    authManager: com.example.mytodoapp.auth.AuthManager,
+    isSyncing: Boolean = false,
     onNavigateToEdit: (TodoGroup, String) -> Unit,
     onNavigateToSettings: () -> Unit,
     onDeleteGroup: (TodoGroup) -> Unit,
     onTogglePin: (TodoGroup) -> Unit
 ) {
     var groupToDelete by remember { mutableStateOf<TodoGroup?>(null) }
+    var lastClickTime by remember { mutableStateOf(0L) }
     val haptic = LocalHapticFeedback.current
     val scrollState = rememberLazyListState()
+    val context = LocalContext.current
+    
+    val authState by authManager.authState.collectAsStateWithLifecycle()
+    val user by authManager.currentUserFlow.collectAsStateWithLifecycle()
 
     // --- Import Dialogs ---
     if (importState is ImportState.Loading) {
@@ -178,23 +245,31 @@ fun DashboardScreen(
     var activeDeletionJob by remember { mutableStateOf<Job?>(null) }
     var itemToScrollTo by remember { mutableStateOf<String?>(null) }
 
+    // Clean up pending deletions if they have actually been removed from 'groups'
+    LaunchedEffect(groups) {
+        val currentGroupIds = groups.map { it.id }.toSet()
+        val idsToRemove = pendingDeletions.keys.filter { it !in currentGroupIds }
+        idsToRemove.forEach { pendingDeletions.remove(it) }
+    }
+
     DisposableEffect(Unit) {
         onDispose {
             activeDeletionJob?.cancel()
-            pendingDeletions.values.forEach { group ->
+            val groupsToDelete = pendingDeletions.values.toList()
+            groupsToDelete.forEach { group ->
                 onDeleteGroup(group)
             }
-            pendingDeletions.clear()
         }
     }
 
     val performSoftDelete: (TodoGroup) -> Unit = { group ->
         activeDeletionJob?.cancel()
 
-        pendingDeletions.values.forEach { pendingGroup ->
+        // Just flush previously pending to DB, but keep them in pendingDeletions 
+        // until the DB actually updates to prevent flickering.
+        pendingDeletions.values.filter { it.id != group.id }.forEach { pendingGroup ->
             onDeleteGroup(pendingGroup)
         }
-        pendingDeletions.clear()
 
         pendingDeletions[group.id] = group
 
@@ -212,9 +287,11 @@ fun DashboardScreen(
                     itemToScrollTo = group.id
                 }
                 SnackbarResult.Dismissed -> {
-                    val pendingGroup = pendingDeletions.remove(group.id)
+                    val pendingGroup = pendingDeletions[group.id]
                     if (pendingGroup != null) {
                         onDeleteGroup(pendingGroup)
+                        // Notice we don't immediately remove it from pendingDeletions here.
+                        // The LaunchedEffect(groups) above will remove it once the flow updates.
                     }
                 }
             }
@@ -223,7 +300,7 @@ fun DashboardScreen(
 
     LaunchedEffect(softDeleteGroupId) {
         if (softDeleteGroupId != null) {
-            val groupToSoftDelete = groups?.find { it.id == softDeleteGroupId }
+            val groupToSoftDelete = groups.find { it.id == softDeleteGroupId }
             if (groupToSoftDelete != null) {
                 performSoftDelete(groupToSoftDelete)
             }
@@ -231,13 +308,20 @@ fun DashboardScreen(
         }
     }
 
-    val visibleGroups = groups?.filterNot { pendingDeletions.containsKey(it.id) }
+    // ✅ AUTO-SCROLL TO TOP ON INITIAL LOAD OR IMPORT SUCCESS
+    LaunchedEffect(groups.isNotEmpty(), importState) {
+        if (groups.isNotEmpty() && (importState is ImportState.Success || groups.size <= 5)) {
+            scrollState.animateScrollToItem(0)
+        }
+    }
+
+    val visibleGroups = groups.filterNot { pendingDeletions.containsKey(it.id) }
 
     val sortedGroups = remember(visibleGroups) {
-        visibleGroups?.sortedWith(
+        visibleGroups.sortedWith(
             compareByDescending<TodoGroup> { it.isPinned }
                 .thenByDescending { it.createdAt }
-        ) ?: emptyList()
+        )
     }
 
     val focusRequester = remember { FocusRequester() }
@@ -374,18 +458,39 @@ fun DashboardScreen(
                             )
                         } else {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                IconButton(
-                                    onClick = onNavigateToSettings,
-                                    modifier = Modifier.padding(end = 8.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Settings,
-                                        contentDescription = "Settings",
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                }
-                                Text("My Workspace", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+                                IconButton(onClick = onNavigateToSettings) {
+                                    val googleProvider = user?.providerData?.find { it.providerId == "google.com" }
+                                    val photoUrl = googleProvider?.photoUrl ?: user?.photoUrl
+
+                                    if (photoUrl != null) {
+                                        AsyncImage(
+                                            model = ImageRequest.Builder(context)
+                                                .data(photoUrl)
+                                                .crossfade(true)
+                                                .build(),
+                                            contentDescription = "Profile",
+                                            modifier = Modifier
+                                                .size(32.dp)
+                                                .clip(CircleShape)
+                                        )
+                                    } else {
+                                        Icon(
+                                            Icons.Default.Person,
+                                            contentDescription = "Settings",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }                                }
+                                
+                                val isGuest = authState == AuthState.GUEST || user == null || user!!.isAnonymous
+                                
+                                val googleProvider = user?.providerData?.find { it.providerId == "google.com" }
+                                val displayName = googleProvider?.displayName ?: user?.displayName
+                                val firstName = displayName?.split(" ")?.firstOrNull()?.takeIf { it.isNotBlank() }
+                                
+                                val titleText = if (isGuest || firstName == null) "My Workspace" else "$firstName's Workspace"
+                                
+                                Text(titleText, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
                             }
                         }
                     }
@@ -436,7 +541,7 @@ fun DashboardScreen(
         if (groupToDelete != null) {
             TodoAlertDialog(
                 title = "Delete Project?",
-                text = "Are you sure you want to delete '${groupToDelete?.title}'?",
+                text = "Are you sure you want to delete '${groupToDelete?.title?.ifBlank { "Untitled" } ?: "Untitled"}'?",
                 confirmText = "Delete",
                 onConfirm = {
                     val target = groupToDelete!!
@@ -447,14 +552,32 @@ fun DashboardScreen(
             )
         }
 
-        if (groups == null) {
+        if (isSyncing && groups.isEmpty()) {
             Box(
-                modifier = Modifier.fillMaxSize().padding(padding),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
                 contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator(
-                    color = MaterialTheme.colorScheme.primary
-                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(
+                        color = MaterialTheme.colorScheme.primary,
+                        strokeWidth = 3.dp,
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Text(
+                        "Syncing your workspace...",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        "Retrieving your projects and tasks",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         } else if (groups.isEmpty()) {
             Column(
@@ -498,10 +621,17 @@ fun DashboardScreen(
                         group = group,
                         isSearchActive = isSearchActive,
                         searchQuery = searchQuery,
-                        onNavigateToEdit = onNavigateToEdit,
                         onTogglePin = onTogglePin,
                         onRequestDelete = { groupToDelete = it },
-                        haptic = haptic
+                        haptic = haptic,
+                        isSyncing = isSyncing,
+                        onNavigate = { g, q ->
+                            val currentTime = System.currentTimeMillis()
+                            if (currentTime - lastClickTime > 500) {
+                                lastClickTime = currentTime
+                                onNavigateToEdit(g, q)
+                            }
+                        }
                     )
                 }
             }
@@ -517,10 +647,11 @@ private fun LazyItemScope.GroupCardItem(
     group: TodoGroup,
     isSearchActive: Boolean,
     searchQuery: String,
-    onNavigateToEdit: (TodoGroup, String) -> Unit,
+    onNavigate: (TodoGroup, String) -> Unit,
     onTogglePin: (TodoGroup) -> Unit,
     onRequestDelete: (TodoGroup) -> Unit,
-    haptic: androidx.compose.ui.hapticfeedback.HapticFeedback
+    haptic: androidx.compose.ui.hapticfeedback.HapticFeedback,
+    isSyncing: Boolean
 ) {
     val focusManager = LocalFocusManager.current
     val favCount = remember(group.tasks) { group.tasks.count { it.isFavorite } }
@@ -545,6 +676,7 @@ private fun LazyItemScope.GroupCardItem(
         state = dismissState,
         modifier = Modifier.animateItem(),
         enableDismissFromStartToEnd = false,
+        enableDismissFromEndToStart = group.tasks.isNotEmpty(),
         backgroundContent = {
             val isDismissed = dismissState.dismissDirection == SwipeToDismissBoxValue.EndToStart
             val color = if (isDismissed) MaterialTheme.colorScheme.error else Color.Transparent
@@ -568,9 +700,11 @@ private fun LazyItemScope.GroupCardItem(
     ) {
         Card(
             onClick = {
-                focusManager.clearFocus()
-                val queryToHighlight = if (isSearchActive && searchQuery.trim().isNotBlank()) searchQuery else ""
-                onNavigateToEdit(group, queryToHighlight)
+                if (group.tasks.isNotEmpty()) {
+                    focusManager.clearFocus()
+                    val queryToHighlight = if (isSearchActive && searchQuery.trim().isNotBlank()) searchQuery else ""
+                    onNavigate(group, queryToHighlight)
+                }
             },
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(24.dp),
@@ -625,8 +759,14 @@ private fun LazyItemScope.GroupCardItem(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.fillMaxWidth()
                         ) {
+                            val taskText = if (group.tasks.isEmpty()) {
+                                "Loading tasks..."
+                            } else {
+                                "${group.tasks.size} Tasks"
+                            }
+                            
                             Text(
-                                text = "${group.tasks.size} Tasks",
+                                text = taskText,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Medium,
                                 color = Color.Gray
@@ -637,8 +777,10 @@ private fun LazyItemScope.GroupCardItem(
                     }
 
                     IconButton(onClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onTogglePin(group)
+                        if (group.tasks.isNotEmpty()) {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onTogglePin(group)
+                        }
                     }) {
                         Icon(
                             imageVector = if (group.isPinned) Icons.Default.PushPin else Icons.Outlined.PushPin,
@@ -649,8 +791,10 @@ private fun LazyItemScope.GroupCardItem(
                     }
 
                     IconButton(onClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onRequestDelete(group)
+                        if (group.tasks.isNotEmpty()) {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onRequestDelete(group)
+                        }
                     }) {
                         Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f))
                     }
