@@ -25,21 +25,23 @@ class SyncWorker(
         val db = TodoDatabase.getDatabase(applicationContext)
         val todoDao = db.todoDao()
         val firestore = FirebaseFirestore.getInstance()
-        val prefManager = PreferenceManager(applicationContext)
+        val prefManager = PreferenceManager.getInstance(applicationContext)
 
         return try {
             val pendingGroups = todoDao.getPendingGroups()
             val pendingTasks = todoDao.getPendingTasks()
             val settingsState = prefManager.settingsSyncState.first()
+            val forceRemote = prefManager.forceRemoteSettings.first()
 
-            if (pendingGroups.isEmpty() && pendingTasks.isEmpty() && settingsState != SyncState.PENDING.name) {
-                // We purposefully do NOT delete synced soft-deleted groups/tasks here
-                // to permanently retain the "Tombstone" locally so 'Delete Wins' works 
-                // reliably against delayed edits from other devices.
+            // Determine if there's actually settings work to do
+            val hasSettingsToUpload = settingsState == SyncState.PENDING.name && !forceRemote
+
+            if (pendingGroups.isEmpty() && pendingTasks.isEmpty() && !hasSettingsToUpload) {
+                // Nothing to push upstream
                 return Result.success()
             }
 
-            if (settingsState == SyncState.PENDING.name) {
+            if (hasSettingsToUpload) {
                 val themeMode = prefManager.themeMode.first().name
                 val aiRewrite = prefManager.aiRewriteType.first().name
                 val pdfConfig = prefManager.pdfConfig.first()
@@ -68,7 +70,7 @@ class SyncWorker(
 
             var batch = firestore.batch()
             var opCount = 0
-            
+
             val successfullySyncedGroupIds = mutableListOf<String>()
             val successfullySyncedTaskIds = mutableListOf<String>()
 
@@ -76,7 +78,7 @@ class SyncWorker(
             for (group in pendingGroups) {
                 val groupRef = firestore.collection("users").document(userId)
                     .collection("groups").document(group.id)
-                
+
                 val groupMap = mutableMapOf<String, Any>(
                     "id" to group.id,
                     "title" to group.title,
@@ -89,7 +91,7 @@ class SyncWorker(
                 if (group.deleted) {
                     groupMap["deleted"] = true
                 }
-                
+
                 batch.set(groupRef, groupMap, SetOptions.merge())
                 successfullySyncedGroupIds.add(group.id)
                 opCount++
@@ -100,7 +102,7 @@ class SyncWorker(
                     todoDao.updateTaskSyncStates(successfullySyncedTaskIds, SyncState.SYNCED)
                     successfullySyncedGroupIds.clear()
                     successfullySyncedTaskIds.clear()
-                    
+
                     batch = firestore.batch()
                     opCount = 0
                 }
@@ -138,7 +140,7 @@ class SyncWorker(
                     todoDao.updateTaskSyncStates(successfullySyncedTaskIds, SyncState.SYNCED)
                     successfullySyncedGroupIds.clear()
                     successfullySyncedTaskIds.clear()
-                    
+
                     batch = firestore.batch()
                     opCount = 0
                 }

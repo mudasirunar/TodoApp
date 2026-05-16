@@ -152,21 +152,8 @@ class TodoViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             _importState.value = com.example.mytodoapp.utils.ImportState.Loading
             val result = backupManager.importDatabase(inputStream)
-            
-            // If import was successful, refresh the local UI states from PreferenceManager
-            if (result is com.example.mytodoapp.utils.ImportState.Success) {
-                updateStatesFromPrefs()
-            }
-            
             _importState.value = result
         }
-    }
-
-    private suspend fun updateStatesFromPrefs() {
-        _themeMode.value = preferenceManager.themeMode.first()
-        _aiRewriteType.value = preferenceManager.aiRewriteType.first()
-        _pdfConfig.value = preferenceManager.pdfConfig.first()
-        _moveDoneToBottom.value = preferenceManager.moveDoneToBottom.first()
     }
 
     val allGroups: StateFlow<List<TodoGroup>> = combine(
@@ -219,18 +206,18 @@ class TodoViewModel(
             initialValue = emptyList()
         )
 
-    // --- Settings Logic (Optimistic UI) ---
-    private val _themeMode = MutableStateFlow<ThemeMode?>(null)
-    val themeMode: StateFlow<ThemeMode?> = _themeMode.asStateFlow()
+    // --- Settings Logic (Reactive via DataStore) ---
+    val themeMode: StateFlow<ThemeMode> = preferenceManager.themeMode
+        .stateIn(viewModelScope, SharingStarted.Eagerly, ThemeMode.SYSTEM)
 
-    private val _aiRewriteType = MutableStateFlow<RewriteType?>(null)
-    val aiRewriteType: StateFlow<RewriteType?> = _aiRewriteType.asStateFlow()
+    val aiRewriteType: StateFlow<RewriteType> = preferenceManager.aiRewriteType
+        .stateIn(viewModelScope, SharingStarted.Eagerly, RewriteType.Standard)
     
-    private val _pdfConfig = MutableStateFlow<com.example.mytodoapp.utils.PdfConfig?>(null)
-    val pdfConfig: StateFlow<com.example.mytodoapp.utils.PdfConfig?> = _pdfConfig.asStateFlow()
+    val pdfConfig: StateFlow<com.example.mytodoapp.utils.PdfConfig> = preferenceManager.pdfConfig
+        .stateIn(viewModelScope, SharingStarted.Eagerly, com.example.mytodoapp.utils.PdfConfig())
 
-    private val _moveDoneToBottom = MutableStateFlow<Boolean?>(null)
-    val moveDoneToBottom: StateFlow<Boolean?> = _moveDoneToBottom.asStateFlow()
+    val moveDoneToBottom: StateFlow<Boolean> = preferenceManager.moveDoneToBottom
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     val lastBackupTime = preferenceManager.lastBackupTime.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), 0L
@@ -240,30 +227,10 @@ class TodoViewModel(
     )
 
     init {
-        viewModelScope.launch {
-            preferenceManager.themeMode.collect { mode ->
-                _themeMode.value = mode
-            }
-        }
-        viewModelScope.launch {
-            preferenceManager.aiRewriteType.collect { type ->
-                _aiRewriteType.value = type
-            }
-        }
-        viewModelScope.launch {
-            preferenceManager.pdfConfig.collect { config ->
-                _pdfConfig.value = config
-            }
-        }
-        viewModelScope.launch {
-            preferenceManager.moveDoneToBottom.collect { value ->
-                _moveDoneToBottom.value = value
-            }
-        }
+        // Settings are handled by stateIn
     }
 
     fun saveThemeMode(mode: ThemeMode) {
-        _themeMode.value = mode // Instant UI update
         viewModelScope.launch {
             preferenceManager.saveThemeMode(mode)
             syncManager.notifyLocalChange()
@@ -271,7 +238,6 @@ class TodoViewModel(
     }
 
     fun saveAiRewriteType(type: RewriteType) {
-        _aiRewriteType.value = type // Instant UI update
         viewModelScope.launch {
             preferenceManager.saveAiRewriteType(type)
             syncManager.notifyLocalChange()
@@ -279,7 +245,6 @@ class TodoViewModel(
     }
 
     fun savePdfConfig(config: com.example.mytodoapp.utils.PdfConfig) {
-        _pdfConfig.value = config // Instant UI update
         viewModelScope.launch {
             preferenceManager.savePdfConfig(config)
             syncManager.notifyLocalChange()
@@ -287,7 +252,6 @@ class TodoViewModel(
     }
 
     fun saveMoveDoneToBottom(value: Boolean) {
-        _moveDoneToBottom.value = value // Instant UI update
         viewModelScope.launch {
             preferenceManager.saveMoveDoneToBottom(value)
             syncManager.notifyLocalChange()
@@ -523,16 +487,6 @@ class TodoViewModel(
             
             // Clear Preferences
             preferenceManager.clearAll()
-            
-            // Reset ViewModel states to defaults
-            _themeMode.value = ThemeMode.SYSTEM
-            _aiRewriteType.value = RewriteType.Standard
-            _pdfConfig.value = com.example.mytodoapp.utils.PdfConfig(
-                includeStatus = true,
-                includeFavorites = true,
-                includeSummary = true
-            )
-            _moveDoneToBottom.value = false
             
             // Post completion back to main thread
             kotlinx.coroutines.withContext(Dispatchers.Main) {

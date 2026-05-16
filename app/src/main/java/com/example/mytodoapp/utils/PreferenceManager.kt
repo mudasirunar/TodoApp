@@ -29,9 +29,19 @@ data class PdfConfig(
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings_prefs")
 
-class PreferenceManager(private val context: Context) {
+class PreferenceManager private constructor(context: Context) {
+    private val appContext = context.applicationContext
 
     companion object {
+        @Volatile
+        private var INSTANCE: PreferenceManager? = null
+
+        fun getInstance(context: Context): PreferenceManager {
+            return INSTANCE ?: synchronized(this) {
+                INSTANCE ?: PreferenceManager(context).also { INSTANCE = it }
+            }
+        }
+
         val THEME_MODE_KEY = stringPreferencesKey("theme_mode")
         val MOVE_DONE_TO_BOTTOM_KEY = booleanPreferencesKey("move_done_to_bottom")
         val FORCE_REMOTE_SETTINGS_KEY = booleanPreferencesKey("force_remote_settings")
@@ -39,24 +49,24 @@ class PreferenceManager(private val context: Context) {
         val PDF_INCLUDE_STATUS_KEY = booleanPreferencesKey("pdf_include_status")
         val PDF_INCLUDE_FAVORITES_KEY = booleanPreferencesKey("pdf_include_favorites")
         val PDF_INCLUDE_SUMMARY_KEY = booleanPreferencesKey("pdf_include_summary")
-        
+
         val LAST_BACKUP_TIME_KEY = longPreferencesKey("last_backup_time")
         val LAST_BACKUP_SOURCE_KEY = stringPreferencesKey("last_backup_source")
-        
+
         val DEVICE_ID_KEY = stringPreferencesKey("device_id")
-        
+
         val SETTINGS_UPDATED_AT_KEY = longPreferencesKey("settings_updated_at")
         val SETTINGS_SYNC_STATE_KEY = stringPreferencesKey("settings_sync_state")
-        
+
         val HAS_MIGRATED_TO_CLOUD_KEY = booleanPreferencesKey("has_migrated_to_cloud")
     }
 
-    val hasMigratedToCloud: Flow<Boolean> = context.dataStore.data.map { it[HAS_MIGRATED_TO_CLOUD_KEY] ?: false }
+    val hasMigratedToCloud: Flow<Boolean> = appContext.dataStore.data.map { it[HAS_MIGRATED_TO_CLOUD_KEY] ?: false }
 
-    val settingsUpdatedAt: Flow<Long> = context.dataStore.data.map { it[SETTINGS_UPDATED_AT_KEY] ?: 0L }
-    val settingsSyncState: Flow<String> = context.dataStore.data.map { it[SETTINGS_SYNC_STATE_KEY] ?: "SYNCED" }
+    val settingsUpdatedAt: Flow<Long> = appContext.dataStore.data.map { it[SETTINGS_UPDATED_AT_KEY] ?: 0L }
+    val settingsSyncState: Flow<String> = appContext.dataStore.data.map { it[SETTINGS_SYNC_STATE_KEY] ?: "SYNCED" }
 
-    val themeMode: Flow<ThemeMode> = context.dataStore.data.map { preferences ->
+    val themeMode: Flow<ThemeMode> = appContext.dataStore.data.map { preferences ->
         val themeName = preferences[THEME_MODE_KEY] ?: ThemeMode.SYSTEM.name
         try {
             ThemeMode.valueOf(themeName)
@@ -65,7 +75,7 @@ class PreferenceManager(private val context: Context) {
         }
     }
 
-    val aiRewriteType: Flow<RewriteType> = context.dataStore.data.map { preferences ->
+    val aiRewriteType: Flow<RewriteType> = appContext.dataStore.data.map { preferences ->
         val typeName = preferences[AI_REWRITE_TYPE_KEY] ?: RewriteType.Standard.name
         try {
             RewriteType.valueOf(typeName)
@@ -74,7 +84,7 @@ class PreferenceManager(private val context: Context) {
         }
     }
 
-    val pdfConfig: Flow<PdfConfig> = context.dataStore.data.map { preferences ->
+    val pdfConfig: Flow<PdfConfig> = appContext.dataStore.data.map { preferences ->
         PdfConfig(
             includeStatus = preferences[PDF_INCLUDE_STATUS_KEY] ?: true,
             includeFavorites = preferences[PDF_INCLUDE_FAVORITES_KEY] ?: true,
@@ -82,22 +92,22 @@ class PreferenceManager(private val context: Context) {
         )
     }
 
-    val moveDoneToBottom: Flow<Boolean> = context.dataStore.data.map { preferences ->
+    val moveDoneToBottom: Flow<Boolean> = appContext.dataStore.data.map { preferences ->
         preferences[MOVE_DONE_TO_BOTTOM_KEY] ?: false
     }
 
-    val lastBackupTime: Flow<Long> = context.dataStore.data.map { it[LAST_BACKUP_TIME_KEY] ?: 0L }
-    val lastBackupSource: Flow<String?> = context.dataStore.data.map { it[LAST_BACKUP_SOURCE_KEY] }
-    
-    val deviceId: Flow<String> = context.dataStore.data.map { preferences ->
+    val lastBackupTime: Flow<Long> = appContext.dataStore.data.map { it[LAST_BACKUP_TIME_KEY] ?: 0L }
+    val lastBackupSource: Flow<String?> = appContext.dataStore.data.map { it[LAST_BACKUP_SOURCE_KEY] }
+
+    val deviceId: Flow<String> = appContext.dataStore.data.map { preferences ->
         preferences[DEVICE_ID_KEY] ?: ""
     }
 
     suspend fun getOrCreateDeviceId(): String {
-        var currentId = context.dataStore.data.first()[DEVICE_ID_KEY]
+        var currentId = appContext.dataStore.data.first()[DEVICE_ID_KEY]
         if (currentId.isNullOrEmpty()) {
             currentId = UUID.randomUUID().toString()
-            context.dataStore.edit { preferences ->
+            appContext.dataStore.edit { preferences ->
                 preferences[DEVICE_ID_KEY] = currentId
             }
         }
@@ -105,7 +115,7 @@ class PreferenceManager(private val context: Context) {
     }
 
     suspend fun saveThemeMode(mode: ThemeMode) {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             preferences[THEME_MODE_KEY] = mode.name
             preferences[SETTINGS_UPDATED_AT_KEY] = System.currentTimeMillis()
             preferences[SETTINGS_SYNC_STATE_KEY] = com.example.mytodoapp.sync.SyncState.PENDING.name
@@ -113,7 +123,7 @@ class PreferenceManager(private val context: Context) {
     }
 
     suspend fun saveAiRewriteType(type: RewriteType) {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             preferences[AI_REWRITE_TYPE_KEY] = type.name
             preferences[SETTINGS_UPDATED_AT_KEY] = System.currentTimeMillis()
             preferences[SETTINGS_SYNC_STATE_KEY] = com.example.mytodoapp.sync.SyncState.PENDING.name
@@ -121,7 +131,7 @@ class PreferenceManager(private val context: Context) {
     }
 
     suspend fun savePdfConfig(config: PdfConfig) {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             preferences[PDF_INCLUDE_STATUS_KEY] = config.includeStatus
             preferences[PDF_INCLUDE_FAVORITES_KEY] = config.includeFavorites
             preferences[PDF_INCLUDE_SUMMARY_KEY] = config.includeSummary
@@ -131,7 +141,7 @@ class PreferenceManager(private val context: Context) {
     }
 
     suspend fun saveMoveDoneToBottom(value: Boolean) {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             preferences[MOVE_DONE_TO_BOTTOM_KEY] = value
             preferences[SETTINGS_UPDATED_AT_KEY] = System.currentTimeMillis()
             preferences[SETTINGS_SYNC_STATE_KEY] = com.example.mytodoapp.sync.SyncState.PENDING.name
@@ -139,48 +149,48 @@ class PreferenceManager(private val context: Context) {
     }
 
     suspend fun saveLastBackupInfo(time: Long, source: String) {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             preferences[LAST_BACKUP_TIME_KEY] = time
             preferences[LAST_BACKUP_SOURCE_KEY] = source
         }
     }
 
-    val forceRemoteSettings: Flow<Boolean> = context.dataStore.data.map { preferences ->
+    val forceRemoteSettings: Flow<Boolean> = appContext.dataStore.data.map { preferences ->
         preferences[FORCE_REMOTE_SETTINGS_KEY] ?: false
     }
 
     suspend fun setForceRemoteSettings(value: Boolean) {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             preferences[FORCE_REMOTE_SETTINGS_KEY] = value
         }
     }
 
     suspend fun markSettingsSynced() {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             preferences[SETTINGS_SYNC_STATE_KEY] = com.example.mytodoapp.sync.SyncState.SYNCED.name
         }
     }
 
     suspend fun markSettingsPending() {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             preferences[SETTINGS_SYNC_STATE_KEY] = com.example.mytodoapp.sync.SyncState.PENDING.name
         }
     }
 
     suspend fun markMigratedToCloud() {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             preferences[HAS_MIGRATED_TO_CLOUD_KEY] = true
         }
     }
 
     suspend fun applyRemoteSettings(
-        themeMode: ThemeMode?, 
-        aiRewriteType: RewriteType?, 
-        pdfConfig: PdfConfig?, 
-        moveDoneToBottom: Boolean?, 
+        themeMode: ThemeMode?,
+        aiRewriteType: RewriteType?,
+        pdfConfig: PdfConfig?,
+        moveDoneToBottom: Boolean?,
         updatedAt: Long
     ) {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             if (themeMode != null) preferences[THEME_MODE_KEY] = themeMode.name
             if (aiRewriteType != null) preferences[AI_REWRITE_TYPE_KEY] = aiRewriteType.name
             if (pdfConfig != null) {
@@ -189,14 +199,14 @@ class PreferenceManager(private val context: Context) {
                 preferences[PDF_INCLUDE_SUMMARY_KEY] = pdfConfig.includeSummary
             }
             if (moveDoneToBottom != null) preferences[MOVE_DONE_TO_BOTTOM_KEY] = moveDoneToBottom
-            
+
             preferences[SETTINGS_UPDATED_AT_KEY] = updatedAt
             preferences[SETTINGS_SYNC_STATE_KEY] = SyncState.SYNCED.name
         }
     }
 
     suspend fun clearAll() {
-        context.dataStore.edit { preferences ->
+        appContext.dataStore.edit { preferences ->
             preferences.clear()
         }
     }

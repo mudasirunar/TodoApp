@@ -113,6 +113,11 @@ class AuthManager(
             val currentUser = auth.currentUser
 
             // 5. Link or Sign In
+            // Signal that we should prioritize remote settings from this Google account.
+            // This MUST be set BEFORE migration so the settings listener and SyncWorker
+            // know not to upload local guest settings over remote.
+            preferenceManager.setForceRemoteSettings(true)
+
             if (currentUser != null && currentUser.isAnonymous) {
                 // We securely upgrade the anonymous account to a Google account
                 try {
@@ -122,16 +127,15 @@ class AuthManager(
                     auth.signInWithCredential(authCredential).await()
                     // Clean up the orphaned anonymous account
                     try { currentUser.delete().await() } catch (ignored: Exception) {}
-                    
-                    // Force re-migration so that local guest data is pushed to the newly signed-in Google account
-                    syncManager.migrateLocalDataToCloud()
                 }
+                // Migrate only projects/tasks to cloud; DON'T migrate settings.
+                // The settings listener in startRealtimeSync() will handle settings:
+                //   - Existing account → apply remote settings (overwrite guest's local)
+                //   - New/fresh account → upload local settings to cloud
+                syncManager.migrateLocalDataToCloud(includeSettings = false)
             } else {
                 auth.signInWithCredential(authCredential).await()
             }
-            
-            // Signal that we should prioritize remote settings from this Google account
-            preferenceManager.setForceRemoteSettings(true)
 
             Result.success(Unit)
         } catch (e: Exception) {

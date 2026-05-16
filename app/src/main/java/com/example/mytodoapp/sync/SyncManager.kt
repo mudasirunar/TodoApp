@@ -32,6 +32,7 @@ import com.example.mytodoapp.utils.ThemeMode
 
 class SyncManager(
     private val context: Context,
+    private val prefManager: PreferenceManager,
     private val externalScope: CoroutineScope = CoroutineScope(Dispatchers.IO)
 ) {
     private val _isSyncing = MutableStateFlow(false)
@@ -46,10 +47,10 @@ class SyncManager(
         onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
 
-    private val _initialSettingsReceived = MutableSharedFlow<Unit>(replay = 1)
-    
+    private val _initialSettingsReceived = MutableStateFlow(false)
+
     suspend fun waitForInitialSettings() {
-        _initialSettingsReceived.first()
+        _initialSettingsReceived.first { it }
     }
 
     init {
@@ -95,49 +96,60 @@ class SyncManager(
         val userId = FirebaseAuth.getInstance().currentUser?.uid ?: return
         val firestore = FirebaseFirestore.getInstance()
         val todoDao = TodoDatabase.getDatabase(context).todoDao()
-        val prefManager = PreferenceManager(context)
+
+        // Reset for the current user session
+        _initialSettingsReceived.value = false
 
         // Stop any existing listeners
         stopRealtimeSync()
-        
+
         _isSyncing.value = true // Start syncing state for initial fetch
 
         settingsListener = firestore.collection("users").document(userId)
             .collection("settings").document("profile")
             .addSnapshotListener { snapshot, e ->
-                if (e != null || snapshot == null) return@addSnapshotListener
-                
+                if (e != null || snapshot == null) {
+                    _initialSettingsReceived.value = true // Don't block on error
+                    return@addSnapshotListener
+                }
+
                 externalScope.launch {
+                    val forceRemote = prefManager.forceRemoteSettings.first()
+
                     if (!snapshot.exists()) {
-                        _initialSettingsReceived.emit(Unit)
+                        // New account: If we just signed in from guest, upload local settings
+                        if (forceRemote) {
+                            prefManager.setForceRemoteSettings(false)
+                            prefManager.markSettingsPending()
+                            notifyLocalChange()
+                        }
+                        _initialSettingsReceived.value = true
                         return@launch
                     }
+
                     try {
-                        val localDeviceId = prefManager.deviceId.first()
-                        val deviceId = snapshot.getString("deviceId") ?: ""
-                        
+                        // Existing account: Always apply remote settings on first login/sync
                         val remoteUpdatedAt = snapshot.getLong("updatedAt") ?: 0L
                         val localUpdatedAt = prefManager.settingsUpdatedAt.first()
-                        val forceRemote = prefManager.forceRemoteSettings.first()
-                        
+
                         if (forceRemote || remoteUpdatedAt > localUpdatedAt) {
-                             if (forceRemote) {
-                                 prefManager.setForceRemoteSettings(false)
-                             }
+                            if (forceRemote) {
+                                prefManager.setForceRemoteSettings(false)
+                            }
                             val themeModeStr = snapshot.getString("themeMode")
                             val themeMode = themeModeStr?.let { try { ThemeMode.valueOf(it) } catch(e:Exception) { null } }
-                            
+
                             val aiRewriteStr = snapshot.getString("aiRewriteType")
                             val aiRewriteType = aiRewriteStr?.let { try { RewriteType.valueOf(it) } catch(e:Exception) { null } }
-                            
+
                             val pdfConfig = PdfConfig(
                                 includeStatus = snapshot.getBoolean("pdfIncludeStatus") ?: true,
                                 includeFavorites = snapshot.getBoolean("pdfIncludeFavorites") ?: true,
                                 includeSummary = snapshot.getBoolean("pdfIncludeSummary") ?: true
                             )
-                            
+
                             val moveDoneToBottom = snapshot.getBoolean("moveDoneToBottom")
-                            
+
                             prefManager.applyRemoteSettings(
                                 themeMode = themeMode,
                                 aiRewriteType = aiRewriteType,
@@ -145,14 +157,11 @@ class SyncManager(
                                 moveDoneToBottom = moveDoneToBottom,
                                 updatedAt = remoteUpdatedAt
                             )
-                             _initialSettingsReceived.emit(Unit)
-                        } else {
-                            // If remote is not newer, still mark as received if it's our first time
-                            _initialSettingsReceived.emit(Unit)
                         }
+                        _initialSettingsReceived.value = true
                     } catch (e: Exception) {
                         e.printStackTrace()
-                        _initialSettingsReceived.emit(Unit) // Ensure we don't block login on error
+                        _initialSettingsReceived.value = true
                     }
                 }
             }
@@ -163,17 +172,17 @@ class SyncManager(
 
                 externalScope.launch {
                     _isSyncing.value = true
-                    val localDeviceId = PreferenceManager(context).deviceId.first()
+                    val localDeviceId = prefManager.deviceId.first()
 
                     for (docChange in snapshot.documentChanges) {
                         try {
                             val doc = docChange.document
                             val deviceId = doc.getString("deviceId") ?: ""
-                            
+
                             // Prevent echo loop for REMOVED items, but for others LWW handles it safely.
                             val remoteUpdatedAt = doc.getLong("updatedAt") ?: 0L
                             val id = doc.getString("id") ?: doc.id
-                            
+
                             val localGroup = todoDao.getGroupById(id)
                             val localUpdatedAt = localGroup?.updatedAt ?: 0L
                             val isRemoteDeleted = doc.getBoolean("deleted") ?: false
@@ -191,9 +200,9 @@ class SyncManager(
                                 )
                                 todoDao.insertGroup(groupEntity)
                             }
-                            
+
                             listenToTasksForGroup(userId, id, todoDao, localDeviceId)
-                            
+
                         } catch (e: Exception) {
                             e.printStackTrace()
                         }
@@ -224,7 +233,7 @@ class SyncManager(
                             if (isRemoteDeleted || remoteUpdatedAt > localUpdatedAt) {
                                 val statusStr = doc.getString("status") ?: TodoStatus.ComingUp.name
                                 val status = try { TodoStatus.valueOf(statusStr) } catch(e:Exception) { TodoStatus.ComingUp }
-                                
+
                                 val taskEntity = TodoTaskEntity(
                                     id = taskId,
                                     groupId = groupId,
@@ -258,9 +267,9 @@ class SyncManager(
 
     suspend fun pushGroupImmediately(group: TodoGroup) {
         val userId = auth.currentUser?.uid ?: return
-        val deviceId = PreferenceManager(context).deviceId.first()
+        val deviceId = prefManager.deviceId.first()
         val now = System.currentTimeMillis()
-        
+
         val groupMap = mapOf(
             "id" to group.id,
             "title" to group.title,
@@ -293,7 +302,7 @@ class SyncManager(
             )
             batch.set(taskRef, taskMap, SetOptions.merge())
         }
-        
+
         try {
             batch.commit().await()
         } catch (e: Exception) {
@@ -303,19 +312,19 @@ class SyncManager(
 
     suspend fun pushTaskDeletionImmediately(groupId: String, taskId: String) {
         val userId = auth.currentUser?.uid ?: return
-        val deviceId = PreferenceManager(context).deviceId.first()
+        val deviceId = prefManager.deviceId.first()
         val now = System.currentTimeMillis()
-        
+
         val taskRef = firestore.collection("users").document(userId)
             .collection("groups").document(groupId)
             .collection("tasks").document(taskId)
-            
+
         val deletionMap = mapOf(
             "deleted" to true,
             "updatedAt" to now,
             "deviceId" to deviceId
         )
-        
+
         try {
             taskRef.set(deletionMap, SetOptions.merge()).await()
         } catch (e: Exception) {
@@ -325,18 +334,18 @@ class SyncManager(
 
     suspend fun pushGroupDeletionImmediately(groupId: String) {
         val userId = auth.currentUser?.uid ?: return
-        val deviceId = PreferenceManager(context).deviceId.first()
+        val deviceId = prefManager.deviceId.first()
         val now = System.currentTimeMillis()
-        
+
         val groupRef = firestore.collection("users").document(userId)
             .collection("groups").document(groupId)
-            
+
         val deletionMap = mapOf(
             "deleted" to true,
             "updatedAt" to now,
             "deviceId" to deviceId
         )
-        
+
         try {
             groupRef.set(deletionMap, SetOptions.merge()).await()
         } catch (e: Exception) {
@@ -346,18 +355,18 @@ class SyncManager(
 
     suspend fun pushGroupPinImmediately(groupId: String, isPinned: Boolean) {
         val userId = auth.currentUser?.uid ?: return
-        val deviceId = PreferenceManager(context).deviceId.first()
+        val deviceId = prefManager.deviceId.first()
         val now = System.currentTimeMillis()
-        
+
         val groupRef = firestore.collection("users").document(userId)
             .collection("groups").document(groupId)
-            
+
         val pinMap = mapOf(
             "isPinned" to isPinned,
             "updatedAt" to now,
             "deviceId" to deviceId
         )
-        
+
         try {
             groupRef.set(pinMap, SetOptions.merge()).await()
         } catch (e: Exception) {
@@ -365,13 +374,14 @@ class SyncManager(
         }
     }
 
-    suspend fun migrateLocalDataToCloud() {
+    suspend fun migrateLocalDataToCloud(includeSettings: Boolean = true) {
         val todoDao = TodoDatabase.getDatabase(context).todoDao()
         todoDao.markAllGroupsPending()
         todoDao.markAllTasksPending()
-        
-        val prefManager = PreferenceManager(context)
-        prefManager.markSettingsPending()
+
+        if (includeSettings) {
+            prefManager.markSettingsPending()
+        }
 
         notifyLocalChange()
     }
