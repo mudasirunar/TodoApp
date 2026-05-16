@@ -159,10 +159,14 @@ class MainActivity : AppCompatActivity() {
                                     authManager = authManager,
                                     isSyncing = isSyncing,
                                     onNavigateToEdit = { group, searchQuery ->
-                                        navController.navigate("edit/${group.id}?query=$searchQuery")
+                                        navController.navigate("edit/${group.id}?query=$searchQuery") {
+                                            launchSingleTop = true
+                                        }
                                     },
                                     onNavigateToSettings = {
-                                        navController.navigate("settings")
+                                        navController.navigate("settings") {
+                                            launchSingleTop = true
+                                        }
                                     },
                                     onDeleteGroup = { group ->
                                         viewModel.deleteGroup(group)

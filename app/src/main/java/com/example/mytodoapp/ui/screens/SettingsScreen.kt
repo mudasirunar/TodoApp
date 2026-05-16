@@ -342,12 +342,20 @@ fun SettingsScreen(
         )
     }
 
+    var lastClickTime by remember { mutableStateOf(0L) }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Settings", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = {
+                        val currentTime = System.currentTimeMillis()
+                        if (currentTime - lastClickTime > 500) {
+                            lastClickTime = currentTime
+                            onBack()
+                        }
+                    }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -984,53 +992,6 @@ fun ThemeSection(
 }
 
 @Composable
-fun AppBrandingFooter() {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth(),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(32.dp)
-                .clip(CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            Image(
-                painter = painterResource(id = R.drawable.ic_launcher_background),
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize()
-            )
-            Image(
-                painter = painterResource(id = R.drawable.ic_launcher_foreground),
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize()
-            )
-        }
-
-        Spacer(modifier = Modifier.width(12.dp))
-
-        Column {
-            Text(
-                text = "ToDo App",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.ExtraBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                lineHeight = 12.sp
-            )
-
-            Text(
-                text = "Version 1.1",
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.Gray,
-                lineHeight = 8.sp
-            )
-        }
-    }
-}
-
-@Composable
 fun AccountSection(
     authManager: com.example.mytodoapp.auth.AuthManager,
     syncManager: com.example.mytodoapp.sync.SyncManager,
@@ -1232,6 +1193,53 @@ fun AccountSection(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun AppBrandingFooter() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Image(
+                painter = painterResource(id = R.drawable.ic_launcher_background),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize()
+            )
+            Image(
+                painter = painterResource(id = R.drawable.ic_launcher_foreground),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column {
+            Text(
+                text = "ToDo App",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.ExtraBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                lineHeight = 12.sp
+            )
+
+            Text(
+                text = "Version 2.0",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.Gray,
+                lineHeight = 8.sp
+            )
         }
     }
 }

@@ -458,7 +458,14 @@ fun DashboardScreen(
                             )
                         } else {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                IconButton(onClick = onNavigateToSettings) {
+                                IconButton(onClick = {
+                                    val currentTime = System.currentTimeMillis()
+                                    if (currentTime - lastClickTime > 500) {
+                                        lastClickTime = currentTime
+                                        focusManager.clearFocus()
+                                        onNavigateToSettings()
+                                    }
+                                }) {
                                     val googleProvider = user?.providerData?.find { it.providerId == "google.com" }
                                     val photoUrl = googleProvider?.photoUrl ?: user?.photoUrl
 
@@ -525,8 +532,12 @@ fun DashboardScreen(
             ) {
                 FloatingActionButton(
                     onClick = { 
-                        focusManager.clearFocus()
-                        onNavigateToEdit(TodoGroup(), "") 
+                        val currentTime = System.currentTimeMillis()
+                        if (currentTime - lastClickTime > 500) {
+                            lastClickTime = currentTime
+                            focusManager.clearFocus()
+                            onNavigateToEdit(TodoGroup(), "") 
+                        }
                     },
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -624,7 +635,6 @@ fun DashboardScreen(
                         onTogglePin = onTogglePin,
                         onRequestDelete = { groupToDelete = it },
                         haptic = haptic,
-                        isSyncing = isSyncing,
                         onNavigate = { g, q ->
                             val currentTime = System.currentTimeMillis()
                             if (currentTime - lastClickTime > 500) {
@@ -651,7 +661,6 @@ private fun LazyItemScope.GroupCardItem(
     onTogglePin: (TodoGroup) -> Unit,
     onRequestDelete: (TodoGroup) -> Unit,
     haptic: androidx.compose.ui.hapticfeedback.HapticFeedback,
-    isSyncing: Boolean
 ) {
     val focusManager = LocalFocusManager.current
     val favCount = remember(group.tasks) { group.tasks.count { it.isFavorite } }

@@ -421,6 +421,7 @@ fun AddTodoScreen(
     var previousIndex by remember { mutableIntStateOf(0) }
     var previousScrollOffset by remember { mutableIntStateOf(0) }
     var fabExpanded by remember { mutableStateOf(true) }
+    var lastClickTime by remember { mutableStateOf(0L) }
 
     LaunchedEffect(scrollState.firstVisibleItemIndex, scrollState.firstVisibleItemScrollOffset) {
         fabExpanded = if (scrollState.firstVisibleItemIndex > previousIndex) {
@@ -453,8 +454,12 @@ fun AddTodoScreen(
     }
 
     val handleExit = { action: () -> Unit ->
-        focusManager.clearFocus()
-        action()
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastClickTime > 500) {
+            lastClickTime = currentTime
+            focusManager.clearFocus()
+            action()
+        }
     }
 
     val onNavigateBack = {
@@ -635,11 +640,15 @@ fun AddTodoScreen(
                 ) {
                     FloatingActionButton(
                         onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            val newTask = TodoTask()
-                            tasks = listOf(newTask) + tasks
-                            focusMap[newTask.id] = FocusRequester()
-                            newTaskToFocusId = newTask.id
+                            val currentTime = System.currentTimeMillis()
+                            if (currentTime - lastClickTime > 500) {
+                                lastClickTime = currentTime
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                val newTask = TodoTask()
+                                tasks = listOf(newTask) + tasks
+                                focusMap[newTask.id] = FocusRequester()
+                                newTaskToFocusId = newTask.id
+                            }
                         },
                         containerColor = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.imePadding()
@@ -653,6 +662,7 @@ fun AddTodoScreen(
                 }
             }
         ) { padding ->
+
 
             if (showExportDialog) {
                 ExportPdfDialog(

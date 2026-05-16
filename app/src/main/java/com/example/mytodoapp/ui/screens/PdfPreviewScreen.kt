@@ -47,6 +47,7 @@ fun PdfPreviewScreen(
     var showLoadingUi by remember { mutableStateOf(false) }
     var isActionsDisabled by remember { mutableStateOf(true) }
     var localConfig by remember { mutableStateOf(config) }
+    var lastClickTime by remember { mutableStateOf(0L) }
 
     LaunchedEffect(isGenerating) {
         if (isGenerating) {
@@ -113,21 +114,25 @@ fun PdfPreviewScreen(
 
     // Share Logic
     val onSharePdf = {
-        val file = tempPdfFile
-        if (file != null && file.exists()) {
-            val uri = FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                file
-            )
-            val intent = Intent(Intent.ACTION_SEND).apply {
-                type = "application/pdf"
-                putExtra(Intent.EXTRA_STREAM, uri)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastClickTime > 500) {
+            lastClickTime = currentTime
+            val file = tempPdfFile
+            if (file != null && file.exists()) {
+                val uri = FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    file
+                )
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    type = "application/pdf"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                context.startActivity(Intent.createChooser(intent, "Share PDF"))
+            } else {
+                Toast.makeText(context, "Preview not ready", Toast.LENGTH_SHORT).show()
             }
-            context.startActivity(Intent.createChooser(intent, "Share PDF"))
-        } else {
-            Toast.makeText(context, "Preview not ready", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -136,7 +141,13 @@ fun PdfPreviewScreen(
             TopAppBar(
                 title = { Text("Preview", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = {
+                        val currentTime = System.currentTimeMillis()
+                        if (currentTime - lastClickTime > 500) {
+                            lastClickTime = currentTime
+                            onBack()
+                        }
+                    }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -197,10 +208,14 @@ fun PdfPreviewScreen(
                     ) {
                         Button(
                             onClick = {
-                                val projectName = group.title.ifBlank { "Untitled" }.replace(Regex("[^a-zA-Z0-9]"), "_")
-                                val dateStr = SimpleDateFormat("dd-MM-yyyy", Locale.getDefault()).format(Date())
-                                val fileName = "${projectName}_TodoList_$dateStr.pdf"
-                                createDocumentLauncher.launch(fileName)
+                                val currentTime = System.currentTimeMillis()
+                                if (currentTime - lastClickTime > 500) {
+                                    lastClickTime = currentTime
+                                    val projectName = group.title.ifBlank { "Untitled" }.replace(Regex("[^a-zA-Z0-9]"), "_")
+                                    val dateStr = SimpleDateFormat("dd-MM-yyyy", Locale.getDefault()).format(Date())
+                                    val fileName = "${projectName}_TodoList_$dateStr.pdf"
+                                    createDocumentLauncher.launch(fileName)
+                                }
                             },
                             modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
                             shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
