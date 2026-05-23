@@ -472,11 +472,18 @@ fun DashboardScreen(
                                     val photoUrl = googleProvider?.photoUrl ?: user?.photoUrl
 
                                     if (photoUrl != null) {
-                                        AsyncImage(
+                                        coil.compose.SubcomposeAsyncImage(
                                             model = ImageRequest.Builder(context)
                                                 .data(photoUrl)
-                                                .crossfade(true)
+                                                .crossfade(false)
                                                 .build(),
+                                            loading = {
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.padding(6.dp),
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    strokeWidth = 2.dp
+                                                )
+                                            },
                                             contentDescription = "Profile",
                                             modifier = Modifier
                                                 .size(32.dp)

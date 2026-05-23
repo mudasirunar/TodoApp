@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -156,8 +157,9 @@ class TodoViewModel(
         }
     }
 
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
     val allGroups: StateFlow<List<TodoGroup>> = combine(
-        todoDao.getAllGroups(),
+        todoDao.getAllGroups().debounce(250L),
         preferenceManager.moveDoneToBottom
     ) { relations, moveDone ->
         relations.map { relation ->

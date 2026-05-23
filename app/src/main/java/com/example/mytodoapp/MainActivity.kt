@@ -1,55 +1,81 @@
 package com.example.mytodoapp
 
+import android.content.res.Configuration
 import android.os.Bundle
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.animation.*
+import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Surface
 import androidx.compose.material3.MaterialTheme
-import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
-import androidx.compose.runtime.*
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
-import androidx.navigation.compose.*
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.example.mytodoapp.auth.AuthManager
+import com.example.mytodoapp.components.RewriteType
 import com.example.mytodoapp.data.TodoDatabase
 import com.example.mytodoapp.data.TodoGroup
+import com.example.mytodoapp.sync.SyncManager
 import com.example.mytodoapp.ui.screens.AddTodoScreen
 import com.example.mytodoapp.ui.screens.DashboardScreen
+import com.example.mytodoapp.ui.screens.LoginScreen
 import com.example.mytodoapp.ui.screens.PdfPreviewScreen
+import com.example.mytodoapp.ui.screens.SettingsScreen
 import com.example.mytodoapp.ui.theme.MyTodoAppTheme
 import com.example.mytodoapp.ui.viewmodel.TodoViewModel
 import com.example.mytodoapp.ui.viewmodel.TodoViewModelFactory
-import androidx.appcompat.app.AppCompatActivity
-import com.example.mytodoapp.components.RewriteType
-import com.example.mytodoapp.ui.screens.SettingsScreen
-import com.example.mytodoapp.utils.ThemeMode
 import com.example.mytodoapp.utils.PreferenceManager
-import com.google.firebase.auth.FirebaseAuth
+import com.example.mytodoapp.utils.ThemeMode
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.tasks.await
-import com.example.mytodoapp.sync.SyncManager
-import com.example.mytodoapp.auth.AuthManager
-import com.example.mytodoapp.ui.screens.LoginScreen
+import kotlinx.coroutines.runBlocking
 
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         com.example.mytodoapp.utils.AnalyticsManager.init(this)
         
-        val splashScreen = installSplashScreen()
-        var isThemeReady by mutableStateOf(false)
-        splashScreen.setKeepOnScreenCondition { !isThemeReady }
+        installSplashScreen()
+        
+        val preferenceManager = PreferenceManager.getInstance(this)
+        
+        val initialThemeMode = runBlocking { preferenceManager.themeMode.first() }
+        val isSystemDark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        val isInitiallyDark = when (initialThemeMode) {
+            ThemeMode.LIGHT -> false
+            ThemeMode.DARK -> true
+            ThemeMode.SYSTEM -> isSystemDark
+        }
+
+        // Apply edge-to-edge immediately with the correct pre-calculated style
+        val initialStyle = if (isInitiallyDark) {
+            SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+        } else {
+            SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT)
+        }
+        enableEdgeToEdge(statusBarStyle = initialStyle, navigationBarStyle = initialStyle)
 
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
 
         val database = TodoDatabase.getDatabase(this)
         val todoDao = database.todoDao()
-        val preferenceManager = PreferenceManager.getInstance(this)
         val syncManager = SyncManager(this, preferenceManager)
         val authManager = AuthManager(this.applicationContext, syncManager, preferenceManager)
 
@@ -58,14 +84,9 @@ class MainActivity : AppCompatActivity() {
                 factory = TodoViewModelFactory(todoDao, preferenceManager, syncManager)
             )
 
-            // ✅ OPTIMIZATION: Collect from ViewModel (Optimistic UI) instead of DataStore directly
-            val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+            val themeMode by viewModel.themeMode.collectAsStateWithLifecycle(initialValue = initialThemeMode)
 
-            LaunchedEffect(themeMode) {
-                isThemeReady = true
-            }
-
-            // ✅ AUTH-BASED SYNC INITIALIZATION
+            // AUTH-BASED SYNC INITIALIZATION
             val authState by authManager.authState.collectAsState()
 
             LaunchedEffect(authState) {
@@ -90,6 +111,15 @@ class MainActivity : AppCompatActivity() {
                 else -> systemTheme
             }
 
+            LaunchedEffect(darkTheme) {
+                val style = if (darkTheme) {
+                    SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+                } else {
+                    SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT)
+                }
+                enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+            }
+
             MyTodoAppTheme(darkTheme = darkTheme) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -103,24 +133,24 @@ class MainActivity : AppCompatActivity() {
                         navController,
                         startDestination = startDestination,
                         enterTransition = {
-                            slideInHorizontally(animationSpec = tween(400)) { it } + fadeIn(tween(400))
+                            slideInHorizontally(animationSpec = tween(300)) { it } + fadeIn(tween(300))
                         },
                         exitTransition = {
                             if (targetState.destination.route?.startsWith("pdf_preview") == true) {
-                                fadeOut(tween(400))
+                                fadeOut(tween(300))
                             } else {
-                                slideOutHorizontally(animationSpec = tween(400)) { -it } + fadeOut(tween(400))
+                                slideOutHorizontally(animationSpec = tween(300)) { -it } + fadeOut(tween(300))
                             }
                         },
                         popEnterTransition = {
                             if (initialState.destination.route?.startsWith("pdf_preview") == true) {
-                                fadeIn(tween(400))
+                                fadeIn(tween(300))
                             } else {
-                                slideInHorizontally(animationSpec = tween(400)) { -it } + fadeIn(tween(400))
+                                slideInHorizontally(animationSpec = tween(300)) { -it } + fadeIn(tween(300))
                             }
                         },
                         popExitTransition = {
-                            slideOutHorizontally(animationSpec = tween(400)) { it } + fadeOut(tween(400))
+                            slideOutHorizontally(animationSpec = tween(300)) { it } + fadeOut(tween(300))
                         }
                     ) {
                         composable("login") {
