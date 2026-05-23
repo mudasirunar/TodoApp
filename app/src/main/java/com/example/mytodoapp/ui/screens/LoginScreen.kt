@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import com.example.mytodoapp.R
 import com.example.mytodoapp.auth.AuthManager
 import com.example.mytodoapp.sync.SyncManager
+import com.example.mytodoapp.utils.AnalyticsManager
 import kotlinx.coroutines.launch
 import androidx.compose.ui.tooling.preview.Preview
 import com.example.mytodoapp.ui.theme.MyTodoAppTheme
@@ -147,9 +148,11 @@ fun LoginScreen(
                             isLoading = true
                             val result = authManager.signInWithGoogle(context)
                             if (result.isSuccess) {
+                                AnalyticsManager.logGoogleLogin(true)
                                 syncManager.waitForInitialSettings()
                                 onLoginSuccess()
                             } else {
+                                AnalyticsManager.logGoogleLogin(false)
                                 isLoading = false
                                 Toast.makeText(
                                     context,

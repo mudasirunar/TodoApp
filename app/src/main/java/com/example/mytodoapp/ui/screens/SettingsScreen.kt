@@ -41,6 +41,7 @@ import com.example.mytodoapp.components.RewriteType
 import com.example.mytodoapp.utils.ThemeMode
 import com.example.mytodoapp.ui.viewmodel.TodoViewModel
 import com.example.mytodoapp.utils.ImportState
+import com.example.mytodoapp.utils.AnalyticsManager
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -114,6 +115,7 @@ fun SettingsScreen(
             context.contentResolver.openOutputStream(uri)?.let { outputStream ->
                 scope.launch {
                     val success = viewModel.exportDatabase(outputStream)
+                    AnalyticsManager.logExportData(success)
                     if (success) {
                         Toast.makeText(context, "Backup exported successfully", Toast.LENGTH_SHORT).show()
                     } else {
@@ -129,6 +131,7 @@ fun SettingsScreen(
     val driveExportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { _ ->
+        AnalyticsManager.logExportData(true)
         Toast.makeText(context, "Backup sent to Drive", Toast.LENGTH_SHORT).show()
     }
 
@@ -138,6 +141,7 @@ fun SettingsScreen(
         if (uri != null) {
             context.contentResolver.openInputStream(uri)?.let { inputStream ->
                 viewModel.importDatabase(inputStream)
+                AnalyticsManager.logImportData(true)
                 onNavigateToDashboard()
             }
         }
@@ -150,6 +154,7 @@ fun SettingsScreen(
             result.data?.data?.let { uri ->
                 context.contentResolver.openInputStream(uri)?.let { inputStream ->
                     viewModel.importDatabase(inputStream)
+                    AnalyticsManager.logImportData(true)
                     onNavigateToDashboard()
                 }
             }
@@ -216,6 +221,7 @@ fun SettingsScreen(
                                     context.startActivity(Intent.createChooser(shareIntent, "Save Backup to Drive"))
                                 }
                             } catch (e: Exception) {
+                                AnalyticsManager.logExportData(false)
                                 Toast.makeText(context, "Failed to create Drive backup", Toast.LENGTH_SHORT).show()
                             }
                         }
@@ -379,28 +385,40 @@ fun SettingsScreen(
 
             ThemeSection(
                 currentTheme = currentTheme,
-                onThemeSelected = onThemeSelected
+                onThemeSelected = {
+                    AnalyticsManager.logSettingsChanged("theme", it.name)
+                    onThemeSelected(it)
+                }
             )
             
             Spacer(modifier = Modifier.height(32.dp))
 
             TaskOrganizationSection(
                 moveDoneToBottom = moveDoneToBottom,
-                onMoveDoneToBottomChange = onMoveDoneToBottomChange
+                onMoveDoneToBottomChange = {
+                    AnalyticsManager.logSettingsChanged("move_done_to_bottom", it.toString())
+                    onMoveDoneToBottomChange(it)
+                }
             )
 
             Spacer(modifier = Modifier.height(32.dp))
 
             AiStyleSection(
                 currentAiStyle = currentAiStyle,
-                onAiStyleSelected = onAiStyleSelected
+                onAiStyleSelected = {
+                    AnalyticsManager.logSettingsChanged("ai_style", it.name)
+                    onAiStyleSelected(it)
+                }
             )
 
             Spacer(modifier = Modifier.height(32.dp))
 
             PdfConfigSection(
                 currentConfig = currentPdfConfig,
-                onConfigChange = onPdfConfigChange
+                onConfigChange = {
+                    AnalyticsManager.logSettingsChanged("pdf_config", "updated")
+                    onPdfConfigChange(it)
+                }
             )
             
             Spacer(modifier = Modifier.height(32.dp))
@@ -1106,9 +1124,11 @@ fun AccountSection(
                                 val result = authManager.signInWithGoogle(context)
                                 isLoading = false
                                 if (result.isSuccess) {
+                                    AnalyticsManager.logGoogleLogin(true)
                                     syncManager.waitForInitialSettings()
                                     onNavigateToDashboard()
                                 } else {
+                                    AnalyticsManager.logGoogleLogin(false)
                                     Toast.makeText(context, "Login failed: ${result.exceptionOrNull()?.message}", Toast.LENGTH_LONG).show()
                                 }
                             }

@@ -23,6 +23,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
 import com.example.mytodoapp.data.TodoGroup
 import com.example.mytodoapp.utils.PdfHelper
+import com.example.mytodoapp.utils.AnalyticsManager
 import com.github.barteksc.pdfviewer.PDFView
 import com.github.barteksc.pdfviewer.scroll.DefaultScrollHandle
 import com.github.barteksc.pdfviewer.util.FitPolicy
@@ -60,13 +61,13 @@ fun PdfPreviewScreen(
         }
     }
     
-    // PDF Save Logic (Final Export)
     val createDocumentLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/pdf")
     ) { uri ->
         if (uri != null) {
             try {
                 PdfHelper.generateTodoPdf(context, uri, group.title, group.tasks, localConfig)
+                AnalyticsManager.logPdfAction("download", group.id)
                 Toast.makeText(context, "PDF saved successfully!", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 Toast.makeText(context, "Failed to save PDF", Toast.LENGTH_SHORT).show()
@@ -74,21 +75,18 @@ fun PdfPreviewScreen(
         }
     }
 
-    // ✅ ASYNCHRONOUS GENERATION: Move I/O off the main thread to prevent UI freezing
     LaunchedEffect(group, localConfig) {
+        AnalyticsManager.logPdfAction("preview", group.id)
         isGenerating = true
         withContext(Dispatchers.IO) {
             try {
-                // 1. Create a unique subfolder
                 val uniqueFolder = File(context.cacheDir, "preview_${System.currentTimeMillis()}")
                 if (!uniqueFolder.exists()) uniqueFolder.mkdirs()
                 
-                // 2. Clean up old preview folders
-                context.cacheDir.listFiles { file -> 
+                context.cacheDir.listFiles { file ->
                     file.isDirectory && file.name.startsWith("preview_") && file != uniqueFolder
                 }?.forEach { it.deleteRecursively() }
 
-                // 3. Generate the file with professional name: ProjectName_TodoList_YYYY-MM-DD.pdf
                 val projectName = group.title.ifBlank { "Untitled" }.replace(Regex("[^a-zA-Z0-9]"), "_")
                 val dateStr = SimpleDateFormat("dd-MM-yyyy", Locale.getDefault()).format(Date())
                 val fileName = "${projectName}_TodoList_$dateStr.pdf"
@@ -98,7 +96,7 @@ fun PdfPreviewScreen(
                     PdfHelper.writePdfToStream(it, group.title, group.tasks, localConfig)
                 }
                 
-                // 4. Update state on main thread
+                // Update state on main thread
                 withContext(Dispatchers.Main) {
                     tempPdfFile = file
                     isGenerating = false
@@ -129,6 +127,7 @@ fun PdfPreviewScreen(
                     putExtra(Intent.EXTRA_STREAM, uri)
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
+                AnalyticsManager.logPdfAction("share", group.id)
                 context.startActivity(Intent.createChooser(intent, "Share PDF"))
             } else {
                 Toast.makeText(context, "Preview not ready", Toast.LENGTH_SHORT).show()
@@ -248,7 +247,6 @@ fun PdfPreviewScreen(
                 .padding(padding),
             contentAlignment = Alignment.Center
         ) {
-            // ✅ CROSSFADE FOR SMOOTH TRANSITION BETWEEN FILES
             androidx.compose.animation.Crossfade(
                 targetState = tempPdfFile,
                 label = "pdfFade",
@@ -279,7 +277,6 @@ fun PdfPreviewScreen(
                 }
             }
 
-            // ✅ SHOW LOADER AS AN OVERLAY (Prevents screen from going empty/white)
             if (showLoadingUi) {
                 Surface(
                     color = Color.Black.copy(alpha = 0.3f),

@@ -107,6 +107,7 @@ import com.example.mytodoapp.components.TodoAlertDialog
 import com.example.mytodoapp.data.TodoGroup
 import com.example.mytodoapp.data.TodoStatus
 import com.example.mytodoapp.utils.ImportState
+import com.example.mytodoapp.utils.AnalyticsManager
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -463,6 +464,7 @@ fun DashboardScreen(
                                     if (currentTime - lastClickTime > 500) {
                                         lastClickTime = currentTime
                                         focusManager.clearFocus()
+                                        AnalyticsManager.logOpenSettings()
                                         onNavigateToSettings()
                                     }
                                 }) {
@@ -536,6 +538,7 @@ fun DashboardScreen(
                         if (currentTime - lastClickTime > 500) {
                             lastClickTime = currentTime
                             focusManager.clearFocus()
+                            AnalyticsManager.logAddNewTaskGroup()
                             onNavigateToEdit(TodoGroup(), "") 
                         }
                     },

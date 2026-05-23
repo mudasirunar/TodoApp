@@ -38,6 +38,8 @@ import com.example.mytodoapp.ui.screens.LoginScreen
 
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        com.example.mytodoapp.utils.AnalyticsManager.init(this)
+        
         val splashScreen = installSplashScreen()
         var isThemeReady by mutableStateOf(false)
         splashScreen.setKeepOnScreenCondition { !isThemeReady }

@@ -7,6 +7,7 @@ plugins {
     alias(libs.plugins.kotlin.ksp)
     id("kotlin-parcelize")
     id("com.google.gms.google-services")
+    id("com.google.firebase.crashlytics")
 }
 
 android {
@@ -121,6 +122,9 @@ dependencies {
 
     // Firebase Analytics
     implementation("com.google.firebase:firebase-analytics-ktx")
+    
+    // Firebase Crashlytics
+    implementation("com.google.firebase:firebase-crashlytics-ktx")
     
     // WorkManager
     implementation("androidx.work:work-runtime-ktx:2.9.0")
