@@ -29,12 +29,12 @@ android {
         applicationId = "com.example.mytodoapp"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "2.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        buildConfigField("String", "GROQ_API_KEY", "\"$apiKey\"")
+        buildConfigField("String", "GROQ_API_KEY", "\"\$apiKey\"")
     }
 
     buildTypes {
@@ -87,7 +87,7 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.0.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
 
-    implementation("androidx.compose.material:material-icons-extended:1.7.8") // Or latest version
+    implementation("androidx.compose.material:material-icons-extended:1.7.8")
 
     implementation("com.google.code.gson:gson:2.10.1")
 

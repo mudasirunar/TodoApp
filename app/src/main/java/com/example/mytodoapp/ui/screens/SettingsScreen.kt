@@ -1255,7 +1255,7 @@ fun AppBrandingFooter() {
             )
 
             Text(
-                text = "Version 2.0",
+                text = "Version 2.1",
                 style = MaterialTheme.typography.labelSmall,
                 color = Color.Gray,
                 lineHeight = 8.sp
