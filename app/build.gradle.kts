@@ -34,7 +34,7 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        buildConfigField("String", "GROQ_API_KEY", "\"\$apiKey\"")
+        buildConfigField("String", "GROQ_API_KEY", "\"$apiKey\"")
     }
 
     buildTypes {
