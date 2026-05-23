@@ -337,7 +337,7 @@ class TodoViewModel(
         
         saveJob?.cancel()
         saveJob = viewModelScope.launch(Dispatchers.IO) {
-            kotlinx.coroutines.delay(400) // 400ms debounce
+            kotlinx.coroutines.delay(250) // 250ms debounce
             saveGroupToDb(group)
         }
     }
@@ -440,8 +440,14 @@ class TodoViewModel(
         }
         
         // Instant push for updates
-        viewModelScope.launch {
-            syncManager.pushGroupImmediately(group.copy(updatedAt = now))
+        val changedTasks = taskEntities.filter { it.syncState == SyncState.PENDING }
+        if (groupChanged || changedTasks.isNotEmpty()) {
+            viewModelScope.launch {
+                syncManager.pushChangesImmediately(
+                    group = if (groupChanged) finalGroupEntity else null,
+                    tasks = changedTasks
+                )
+            }
         }
         
         syncManager.notifyLocalChange()

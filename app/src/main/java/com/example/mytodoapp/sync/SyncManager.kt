@@ -58,7 +58,7 @@ class SyncManager(
         @OptIn(FlowPreview::class)
         externalScope.launch {
             syncTrigger
-                .debounce(3000L) // Wait 3 seconds after the last change before triggering sync
+                .debounce(3000L)
                 .collect {
                     enqueueBatchSync()
                 }
@@ -265,40 +265,69 @@ class SyncManager(
         taskListeners.clear()
     }
 
-    suspend fun pushGroupImmediately(group: TodoGroup) {
+    suspend fun pushSettingsImmediately() {
         val userId = auth.currentUser?.uid ?: return
+        val themeMode = prefManager.themeMode.first().name
+        val aiRewrite = prefManager.aiRewriteType.first().name
+        val pdfConfig = prefManager.pdfConfig.first()
+        val moveDone = prefManager.moveDoneToBottom.first()
+        val updatedAt = prefManager.settingsUpdatedAt.first()
         val deviceId = prefManager.deviceId.first()
-        val now = System.currentTimeMillis()
 
-        val groupMap = mapOf(
-            "id" to group.id,
-            "title" to group.title,
-            "createdAt" to group.createdAt,
-            "isPinned" to group.isPinned,
-            "updatedAt" to now,
+        val settingsMap = mapOf(
+            "themeMode" to themeMode,
+            "aiRewriteType" to aiRewrite,
+            "pdfIncludeStatus" to pdfConfig.includeStatus,
+            "pdfIncludeFavorites" to pdfConfig.includeFavorites,
+            "pdfIncludeSummary" to pdfConfig.includeSummary,
+            "moveDoneToBottom" to moveDone,
+            "updatedAt" to updatedAt,
             "deviceId" to deviceId
         )
+        try {
+            firestore.collection("users").document(userId)
+                .collection("settings").document("profile")
+                .set(settingsMap, SetOptions.merge())
+                .await()
+            prefManager.markSettingsSynced()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 
+    suspend fun pushChangesImmediately(group: TodoGroupEntity?, tasks: List<TodoTaskEntity>) {
+        val userId = auth.currentUser?.uid ?: return
         val firestore = FirebaseFirestore.getInstance()
         val batch = firestore.batch()
 
-        val groupRef = firestore.collection("users").document(userId)
-            .collection("groups").document(group.id)
+        group?.let {
+            val groupRef = firestore.collection("users").document(userId)
+                .collection("groups").document(it.id)
+            val groupMap = mapOf(
+                "id" to it.id,
+                "title" to it.title,
+                "createdAt" to it.createdAt,
+                "isPinned" to it.isPinned,
+                "updatedAt" to it.updatedAt,
+                "deviceId" to it.deviceId
+            )
+            batch.set(groupRef, groupMap, SetOptions.merge())
+        }
 
-        batch.set(groupRef, groupMap, SetOptions.merge())
-
-        group.tasks.forEachIndexed { index, task ->
-            val taskRef = groupRef.collection("tasks").document(task.id)
+        tasks.forEach { task ->
+            val taskRef = firestore.collection("users").document(userId)
+                .collection("groups").document(task.groupId)
+                .collection("tasks").document(task.id)
             val taskMap = mapOf(
                 "id" to task.id,
-                "groupId" to group.id,
+                "groupId" to task.groupId,
                 "text" to task.text,
                 "status" to task.status.name,
                 "isFavorite" to task.isFavorite,
-                "position" to (index + 1) * 100.0,
+                "position" to task.position,
                 "createdAt" to task.createdAt,
-                "updatedAt" to now,
-                "deviceId" to deviceId
+                "updatedAt" to task.updatedAt,
+                "deviceId" to task.deviceId
             )
             batch.set(taskRef, taskMap, SetOptions.merge())
         }
