@@ -168,7 +168,7 @@ class MainActivity : AppCompatActivity() {
                         composable("dashboard") { backStackEntry ->
                             val groups by viewModel.activeGroups.collectAsStateWithLifecycle()
                             val importState by viewModel.importState.collectAsStateWithLifecycle()
-                            val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
+                            val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
                             val softDeleteGroupId by backStackEntry.savedStateHandle.getStateFlow<String?>(
                                 "soft_delete_group_id",
                                 null
@@ -177,13 +177,13 @@ class MainActivity : AppCompatActivity() {
                             DashboardScreen(
                                 groups = groups,
                                 importState = importState,
+                                isLoading = isLoading,
                                 onResetImportState = { viewModel.resetImportState() },
                                 softDeleteGroupId = softDeleteGroupId,
                                 onSoftDeleteHandled = {
                                     backStackEntry.savedStateHandle.remove<String>("soft_delete_group_id")
                                 },
                                 authManager = authManager,
-                                isSyncing = isSyncing,
                                 onNavigateToEdit = { group, searchQuery ->
                                     navController.navigate("edit/${group.id}?query=$searchQuery") {
                                         launchSingleTop = true

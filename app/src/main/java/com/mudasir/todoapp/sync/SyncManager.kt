@@ -35,7 +35,7 @@ class SyncManager(
     private val prefManager: PreferenceManager,
     private val externalScope: CoroutineScope = CoroutineScope(Dispatchers.IO)
 ) {
-    private val _isSyncing = MutableStateFlow(false)
+    private val _isSyncing = MutableStateFlow(FirebaseAuth.getInstance().currentUser != null)
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
 
     private val auth = FirebaseAuth.getInstance()
@@ -48,6 +48,19 @@ class SyncManager(
     )
 
     private val _initialSettingsReceived = MutableStateFlow(false)
+
+    private var initialGroupsLoaded = false
+    private val pendingTaskInitialLoads = java.util.concurrent.atomic.AtomicInteger(0)
+
+    // True if the initial Firebase snapshot contained active (non-deleted) groups
+    private val _initialSyncHadData = MutableStateFlow(false)
+    val initialSyncHadData: StateFlow<Boolean> = _initialSyncHadData.asStateFlow()
+
+    private fun checkInitialSyncComplete() {
+        if (initialGroupsLoaded && pendingTaskInitialLoads.get() <= 0) {
+            _isSyncing.value = false
+        }
+    }
 
     suspend fun waitForInitialSettings() {
         _initialSettingsReceived.first { it }
@@ -166,13 +179,32 @@ class SyncManager(
                 }
             }
 
+        initialGroupsLoaded = false
+        pendingTaskInitialLoads.set(0)
+        _initialSyncHadData.value = false
+
         groupListener = firestore.collection("users").document(userId).collection("groups")
             .addSnapshotListener { snapshot, e ->
-                if (e != null || snapshot == null) return@addSnapshotListener
+                if (e != null || snapshot == null) {
+                    if (!initialGroupsLoaded) {
+                        initialGroupsLoaded = true
+                        checkInitialSyncComplete()
+                    }
+                    return@addSnapshotListener
+                }
 
                 externalScope.launch {
-                    _isSyncing.value = true
                     val localDeviceId = prefManager.deviceId.first()
+
+                    val isInitialCallback = !initialGroupsLoaded
+                    if (isInitialCallback) {
+                        // Count active groups being added to determine how many task snapshot listeners we need to track
+                        val activeGroupsToFetch = snapshot.documentChanges.filter {
+                            it.type == DocumentChange.Type.ADDED && !(it.document.getBoolean("deleted") ?: false)
+                        }
+                        pendingTaskInitialLoads.set(activeGroupsToFetch.size)
+                        _initialSyncHadData.value = activeGroupsToFetch.isNotEmpty()
+                    }
 
                     for (docChange in snapshot.documentChanges) {
                         try {
@@ -201,25 +233,54 @@ class SyncManager(
                                 todoDao.insertGroup(groupEntity)
                             }
 
-                            listenToTasksForGroup(userId, id, todoDao, localDeviceId)
+                            listenToTasksForGroup(userId, id, todoDao, localDeviceId) {
+                                if (isInitialCallback) {
+                                    val remaining = pendingTaskInitialLoads.decrementAndGet()
+                                    if (remaining <= 0) {
+                                        checkInitialSyncComplete()
+                                    }
+                                }
+                            }
 
                         } catch (e: Exception) {
                             e.printStackTrace()
                         }
                     }
-                    _isSyncing.value = false // Initial fetch of groups is done
+
+                    if (isInitialCallback) {
+                        initialGroupsLoaded = true
+                        if (pendingTaskInitialLoads.get() == 0) {
+                            checkInitialSyncComplete()
+                        }
+                    }
                 }
             }
     }
 
-    private fun listenToTasksForGroup(userId: String, groupId: String, todoDao: TodoDao, localDeviceId: String) {
-        if (taskListeners.containsKey(groupId)) return
+    private fun listenToTasksForGroup(
+        userId: String,
+        groupId: String,
+        todoDao: TodoDao,
+        localDeviceId: String,
+        onInitialLoaded: () -> Unit = {}
+    ) {
+        if (taskListeners.containsKey(groupId)) {
+            onInitialLoaded()
+            return
+        }
         val firestore = FirebaseFirestore.getInstance()
+        var hasFiredInitial = false
         val listener = firestore.collection("users").document(userId)
             .collection("groups").document(groupId)
             .collection("tasks")
             .addSnapshotListener { snapshot, e ->
-                if (e != null || snapshot == null) return@addSnapshotListener
+                if (e != null || snapshot == null) {
+                    if (!hasFiredInitial) {
+                        hasFiredInitial = true
+                        onInitialLoaded()
+                    }
+                    return@addSnapshotListener
+                }
                 externalScope.launch {
                     for (docChange in snapshot.documentChanges) {
                         try {
@@ -251,6 +312,10 @@ class SyncManager(
                             }
                         } catch (e: Exception) { e.printStackTrace() }
                     }
+                    if (!hasFiredInitial) {
+                        hasFiredInitial = true
+                        onInitialLoaded()
+                    }
                 }
             }
         taskListeners[groupId] = listener
@@ -263,6 +328,7 @@ class SyncManager(
         groupListener = null
         taskListeners.values.forEach { it.remove() }
         taskListeners.clear()
+        _isSyncing.value = false
     }
 
     suspend fun pushSettingsImmediately() {

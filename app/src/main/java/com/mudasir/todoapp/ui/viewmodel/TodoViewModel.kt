@@ -91,13 +91,14 @@ class TodoViewModel(
 
     private val backupManager = com.mudasir.todoapp.utils.BackupManager(todoDao, preferenceManager)
 
+    private val _isDbLoaded = MutableStateFlow(false)
+
     private val _importState = MutableStateFlow<com.mudasir.todoapp.utils.ImportState>(com.mudasir.todoapp.utils.ImportState.Idle)
     val importState: StateFlow<com.mudasir.todoapp.utils.ImportState> = _importState.asStateFlow()
 
     fun resetImportState() {
         _importState.value = com.mudasir.todoapp.utils.ImportState.Idle
     }
-    val isSyncing: StateFlow<Boolean> = syncManager.isSyncing
     
     private suspend fun getBackupData(): BackupData {
         val currentGroups = activeGroups.value
@@ -159,10 +160,13 @@ class TodoViewModel(
 
     @OptIn(kotlinx.coroutines.FlowPreview::class)
     val allGroups: StateFlow<List<TodoGroup>> = combine(
-        todoDao.getAllGroups().debounce(250L),
+        todoDao.getAllGroups().let { flow ->
+            var isFirst = true
+            flow.debounce { if (isFirst) { isFirst = false; 0L } else 250L }
+        },
         preferenceManager.moveDoneToBottom
     ) { relations, moveDone ->
-        relations.map { relation ->
+        val mapped = relations.map { relation ->
             // Filter out deleted tasks
             val activeTasks = relation.tasks.filter { !it.deleted }
             
@@ -192,6 +196,8 @@ class TodoViewModel(
                 isDeleted = relation.group.deleted
             )
         }
+        _isDbLoaded.value = true
+        mapped
     }
         .flowOn(Dispatchers.IO)
         .stateIn(
@@ -207,6 +213,33 @@ class TodoViewModel(
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
+
+    /**
+     * Single source of truth for the dashboard loading state.
+     * Stays true until we are CERTAIN the UI has the final data:
+     * - DB hasn't loaded at all yet → loading
+     * - Sync is in progress → loading
+     * - Sync finished AND it had data, but groups is still empty (Room hasn't caught up) → loading
+     * - Sync finished AND it had NO data (empty account), groups empty → NOT loading (show empty state)
+     * - Sync finished AND groups is non-empty → NOT loading (show projects)
+     */
+    val isLoading: StateFlow<Boolean> = combine(
+        syncManager.isSyncing,
+        syncManager.initialSyncHadData,
+        _isDbLoaded,
+        activeGroups
+    ) { syncing, syncHadData, dbLoaded, groups ->
+        when {
+            !dbLoaded -> true                       // DB hasn't emitted anything yet
+            syncing -> true                         // Still syncing from Firebase
+            syncHadData && groups.isEmpty() -> true  // Sync wrote data but Room hasn't caught up yet
+            else -> false                           // Ready: either has data or account is truly empty
+        }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = true
+    )
 
     // --- Settings Logic (Reactive via DataStore) ---
     val themeMode: StateFlow<ThemeMode> = preferenceManager.themeMode

@@ -119,11 +119,11 @@ import com.mudasir.todoapp.auth.AuthState
 fun DashboardScreen(
     groups: List<TodoGroup>,
     importState: ImportState = ImportState.Idle,
+    isLoading: Boolean = false,
     onResetImportState: () -> Unit = {},
     softDeleteGroupId: String? = null,
     onSoftDeleteHandled: () -> Unit = {},
     authManager: com.mudasir.todoapp.auth.AuthManager,
-    isSyncing: Boolean = false,
     onNavigateToEdit: (TodoGroup, String) -> Unit,
     onNavigateToSettings: () -> Unit,
     onDeleteGroup: (TodoGroup) -> Unit,
@@ -573,7 +573,7 @@ fun DashboardScreen(
             )
         }
 
-        if (isSyncing && groups.isEmpty()) {
+        if (isLoading) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -588,7 +588,7 @@ fun DashboardScreen(
                     )
                     Spacer(modifier = Modifier.height(24.dp))
                     Text(
-                        "Syncing your workspace...",
+                        "Loading your workspace...",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
