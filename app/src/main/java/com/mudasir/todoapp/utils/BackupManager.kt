@@ -203,6 +203,8 @@ class BackupManager(
                     preferenceManager.saveMoveDoneToBottom(settings.moveDoneToBottom)
                 }
 
+                preferenceManager.resetMigrationState()
+
                 ImportState.Success(tasksImported, duplicatesIgnored)
 
             } catch (e: Exception) {

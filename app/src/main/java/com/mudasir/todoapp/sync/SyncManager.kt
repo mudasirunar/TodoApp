@@ -225,13 +225,13 @@ class SyncManager(
                                 continue
                             }
 
-                            if (isRemoteDeleted || remoteUpdatedAt > localUpdatedAt) {
+                            if (remoteUpdatedAt > localUpdatedAt) {
                                 val groupEntity = TodoGroupEntity(
                                     id = id,
                                     title = doc.getString("title") ?: "",
                                     createdAt = doc.getLong("createdAt") ?: 0L,
                                     isPinned = doc.getBoolean("isPinned") ?: doc.getBoolean("pinned") ?: false,
-                                    updatedAt = if (isRemoteDeleted) maxOf(remoteUpdatedAt, localUpdatedAt + 1) else remoteUpdatedAt,
+                                    updatedAt = remoteUpdatedAt,
                                     deleted = isRemoteDeleted,
                                     syncState = SyncState.SYNCED,
                                     deviceId = deviceId
@@ -303,7 +303,7 @@ class SyncManager(
                                 continue
                             }
 
-                            if (isRemoteDeleted || remoteUpdatedAt > localUpdatedAt) {
+                            if (remoteUpdatedAt > localUpdatedAt) {
                                 val statusStr = doc.getString("status") ?: TodoStatus.ComingUp.name
                                 val status = try { TodoStatus.valueOf(statusStr) } catch(e:Exception) { TodoStatus.ComingUp }
 
@@ -315,7 +315,7 @@ class SyncManager(
                                     isFavorite = doc.getBoolean("isFavorite") ?: doc.getBoolean("favorite") ?: false,
                                     position = doc.getDouble("position") ?: 0.0,
                                     createdAt = doc.getLong("createdAt") ?: 0L,
-                                    updatedAt = if (isRemoteDeleted) maxOf(remoteUpdatedAt, localUpdatedAt + 1) else remoteUpdatedAt,
+                                    updatedAt = remoteUpdatedAt,
                                     deleted = isRemoteDeleted,
                                     syncState = SyncState.SYNCED,
                                     deviceId = doc.getString("deviceId") ?: ""

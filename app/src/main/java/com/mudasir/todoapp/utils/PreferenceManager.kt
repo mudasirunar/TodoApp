@@ -213,6 +213,12 @@ class PreferenceManager private constructor(context: Context) {
         }
     }
 
+    suspend fun resetMigrationState() {
+        appContext.dataStore.edit { preferences ->
+            preferences[HAS_MIGRATED_TO_CLOUD_KEY] = false
+        }
+    }
+
     suspend fun clearAll() {
         appContext.dataStore.edit { preferences ->
             preferences.clear()
