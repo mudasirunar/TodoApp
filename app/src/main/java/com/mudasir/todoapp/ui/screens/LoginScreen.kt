@@ -147,7 +147,6 @@ fun LoginScreen(
                         scope.launch {
                             isLoading = true
                             
-                            // Check network availability before proceeding
                             if (!com.mudasir.todoapp.utils.NetworkUtils.isNetworkAvailable(context)) {
                                 isLoading = false
                                 Toast.makeText(
@@ -214,14 +213,13 @@ fun LoginScreen(
                         scope.launch {
                             isLoading = true
                             
-                            // Enforce loading spinner visual presence for at least 500ms
                             val minDelayJob = launch { kotlinx.coroutines.delay(500L) }
                             
                             val isOnline = com.mudasir.todoapp.utils.NetworkUtils.isNetworkAvailable(context)
                             val result = if (isOnline) {
                                 authManager.signInAnonymously()
                             } else {
-                                Result.success(Unit) // Bypass offline
+                                Result.success(Unit)
                             }
                             
                             minDelayJob.join()
@@ -235,7 +233,6 @@ fun LoginScreen(
                                 isLoading = false
                                 onLoginSuccess()
                             } else {
-                                // If Firebase sign-in failed even though we had internet, fallback to offline guest anyway
                                 authManager.setOfflineGuest(true)
                                 isLoading = false
                                 onLoginSuccess()

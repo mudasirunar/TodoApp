@@ -1122,7 +1122,6 @@ fun AccountSection(
                             scope.launch {
                                 isLoading = true
                                 
-                                // Check network availability before proceeding
                                 if (!com.mudasir.todoapp.utils.NetworkUtils.isNetworkAvailable(context)) {
                                     isLoading = false
                                     Toast.makeText(

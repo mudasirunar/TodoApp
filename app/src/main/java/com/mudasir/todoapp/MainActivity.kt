@@ -95,8 +95,6 @@ class MainActivity : AppCompatActivity() {
                 if (authState == com.mudasir.todoapp.auth.AuthState.AUTHENTICATED ||
                     authState == com.mudasir.todoapp.auth.AuthState.GUEST) {
 
-                    // Silent Auth Upgrade: if in GUEST authState but Firebase user is null, we are an offline guest.
-                    // If internet is available, silently upgrade them to Firebase Anonymous User so syncing starts!
                     if (authState == com.mudasir.todoapp.auth.AuthState.GUEST && authManager.currentUser == null) {
                         if (com.mudasir.todoapp.utils.NetworkUtils.isNetworkAvailable(this@MainActivity)) {
                             val result = authManager.signInAnonymously()

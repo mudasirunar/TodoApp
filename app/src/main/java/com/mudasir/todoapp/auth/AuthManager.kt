@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
@@ -137,28 +138,24 @@ class AuthManager(
             // know not to upload local guest settings over remote.
             preferenceManager.setForceRemoteSettings(true)
 
-            if (currentUser != null && currentUser.isAnonymous) {
-                // We securely upgrade the anonymous account to a Google account
-                val oldUid = currentUser.uid
-                try {
-                    currentUser.linkWithCredential(authCredential).await()
-                    // Successful link: same UID, same data. Just migrate local to cloud.
-                    syncManager.migrateLocalDataToCloud(includeSettings = false)
-                } catch (e: Exception) {
-                    // If linking fails (e.g., Google account already exists), fallback to signing in to the existing account
-                    auth.signInWithCredential(authCredential).await()
-                    val newUid = auth.currentUser?.uid
-                    
-                    // Clear Room Database if we are switching to a completely different user account
-                    if (newUid != null && newUid != oldUid) {
-                        val db = TodoDatabase.getDatabase(applicationContext)
-                        db.todoDao().deleteAllGroups()
-                        db.todoDao().deleteAllTasks()
+            val isOldGuest = (currentUser != null && currentUser.isAnonymous) ||
+                             kotlinx.coroutines.runBlocking { preferenceManager.isOfflineGuest.first() }
+
+            if (isOldGuest) {
+                if (currentUser != null && currentUser.isAnonymous) {
+                    try {
+                        currentUser.linkWithCredential(authCredential).await()
+                        syncManager.migrateLocalDataToCloud(includeSettings = false)
+                    } catch (e: Exception) {
+                        auth.signInWithCredential(authCredential).await()
+                        try { currentUser.delete().await() } catch (ignored: Exception) {}
+                        syncManager.migrateLocalDataToCloud(includeSettings = false)
                     }
-                    
-                    // Clean up the orphaned anonymous account
-                    try { currentUser.delete().await() } catch (ignored: Exception) {}
+                } else {
+                    auth.signInWithCredential(authCredential).await()
+                    syncManager.migrateLocalDataToCloud(includeSettings = false)
                 }
+                preferenceManager.setOfflineGuest(false)
             } else {
                 val oldUid = currentUser?.uid
                 auth.signInWithCredential(authCredential).await()
