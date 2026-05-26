@@ -11,10 +11,8 @@ plugins {
 }
 
 android {
-    namespace = "com.example.mytodoapp"
-    compileSdk {
-        version = release(36)
-    }
+    namespace = "com.mudasir.todoapp"
+    compileSdk = 36
 
     val localProps = Properties()
     val localFile = rootProject.file("local.properties")
@@ -26,7 +24,7 @@ android {
     val apiKey = localProps.getProperty("GROQ_API_KEY", "")
 
     defaultConfig {
-        applicationId = "com.example.mytodoapp"
+        applicationId = "com.mudasir.todoapp"
         minSdk = 24
         targetSdk = 36
         versionCode = 2
