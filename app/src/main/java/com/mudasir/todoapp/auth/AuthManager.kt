@@ -139,21 +139,35 @@ class AuthManager(
 
             if (currentUser != null && currentUser.isAnonymous) {
                 // We securely upgrade the anonymous account to a Google account
+                val oldUid = currentUser.uid
                 try {
                     currentUser.linkWithCredential(authCredential).await()
+                    // Successful link: same UID, same data. Just migrate local to cloud.
+                    syncManager.migrateLocalDataToCloud(includeSettings = false)
                 } catch (e: Exception) {
-                    // If linking fails (e.g., Google account already exists), fallback to signing in
+                    // If linking fails (e.g., Google account already exists), fallback to signing in to the existing account
                     auth.signInWithCredential(authCredential).await()
+                    val newUid = auth.currentUser?.uid
+                    
+                    // Clear Room Database if we are switching to a completely different user account
+                    if (newUid != null && newUid != oldUid) {
+                        val db = TodoDatabase.getDatabase(applicationContext)
+                        db.todoDao().deleteAllGroups()
+                        db.todoDao().deleteAllTasks()
+                    }
+                    
                     // Clean up the orphaned anonymous account
                     try { currentUser.delete().await() } catch (ignored: Exception) {}
                 }
-                // Migrate only projects/tasks to cloud; DON'T migrate settings.
-                // The settings listener in startRealtimeSync() will handle settings:
-                //   - Existing account → apply remote settings (overwrite guest's local)
-                //   - New/fresh account → upload local settings to cloud
-                syncManager.migrateLocalDataToCloud(includeSettings = false)
             } else {
+                val oldUid = currentUser?.uid
                 auth.signInWithCredential(authCredential).await()
+                val newUid = auth.currentUser?.uid
+                if (newUid != null && newUid != oldUid) {
+                    val db = TodoDatabase.getDatabase(applicationContext)
+                    db.todoDao().deleteAllGroups()
+                    db.todoDao().deleteAllTasks()
+                }
             }
 
             Result.success(Unit)

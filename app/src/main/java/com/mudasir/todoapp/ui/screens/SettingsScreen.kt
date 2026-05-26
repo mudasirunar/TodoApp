@@ -1121,15 +1121,38 @@ fun AccountSection(
                         .clickable {
                             scope.launch {
                                 isLoading = true
+                                
+                                // Check network availability before proceeding
+                                if (!com.mudasir.todoapp.utils.NetworkUtils.isNetworkAvailable(context)) {
+                                    isLoading = false
+                                    Toast.makeText(
+                                        context,
+                                        "No internet connection. Please check your network and try again.",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                    return@launch
+                                }
+                                
                                 val result = authManager.signInWithGoogle(context)
-                                isLoading = false
                                 if (result.isSuccess) {
                                     AnalyticsManager.logGoogleLogin(true)
                                     syncManager.waitForInitialSettings()
                                     onNavigateToDashboard()
                                 } else {
                                     AnalyticsManager.logGoogleLogin(false)
-                                    Toast.makeText(context, "Login failed: ${result.exceptionOrNull()?.message}", Toast.LENGTH_LONG).show()
+                                    isLoading = false
+                                    val exception = result.exceptionOrNull()
+                                    val errorMessage = when {
+                                        exception?.javaClass?.simpleName == "GetCredentialCancellationException" ||
+                                        exception?.message?.contains("cancel", ignoreCase = true) == true ||
+                                        exception?.message?.contains("canceled", ignoreCase = true) == true -> {
+                                            "Sign in cancelled"
+                                        }
+                                        else -> {
+                                            "Login failed: ${exception?.localizedMessage ?: "Unknown error"}"
+                                        }
+                                    }
+                                    Toast.makeText(context, errorMessage, Toast.LENGTH_LONG).show()
                                 }
                             }
                         }

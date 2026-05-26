@@ -241,11 +241,14 @@ class TodoViewModel(
      */
     val isLoading: StateFlow<Boolean> = combine(
         syncManager.isSyncing,
-        _isDbLoaded
-    ) { syncing, dbLoaded ->
+        _isDbLoaded,
+        syncManager.initialSyncHadData,
+        activeGroups
+    ) { syncing, dbLoaded, initialSyncHadData, groups ->
         when {
             !dbLoaded -> true                       // DB hasn't emitted anything yet
             syncing -> true                         // Still syncing from Firebase
+            initialSyncHadData && groups.isEmpty() -> true // Sync got data, but Room hasn't caught up yet
             else -> false                           // Ready: either has data or account is truly empty
         }
     }.stateIn(

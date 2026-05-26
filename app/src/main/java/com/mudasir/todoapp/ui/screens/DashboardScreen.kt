@@ -466,15 +466,18 @@ fun DashboardScreen(
                             )
                         } else {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                IconButton(onClick = {
-                                    val currentTime = System.currentTimeMillis()
-                                    if (currentTime - lastClickTime > 500) {
-                                        lastClickTime = currentTime
-                                        focusManager.clearFocus()
-                                        AnalyticsManager.logOpenSettings()
-                                        onNavigateToSettings()
+                                IconButton(
+                                    enabled = !isLoading,
+                                    onClick = {
+                                        val currentTime = System.currentTimeMillis()
+                                        if (currentTime - lastClickTime > 500) {
+                                            lastClickTime = currentTime
+                                            focusManager.clearFocus()
+                                            AnalyticsManager.logOpenSettings()
+                                            onNavigateToSettings()
+                                        }
                                     }
-                                }) {
+                                ) {
                                     val googleProvider = user?.providerData?.find { it.providerId == "google.com" }
                                     val photoUrl = googleProvider?.photoUrl ?: user?.photoUrl
 
@@ -519,14 +522,17 @@ fun DashboardScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        isSearchActive = !isSearchActive
-                        if (!isSearchActive) {
-                            searchQuery = ""
-                            focusManager.clearFocus()
+                    IconButton(
+                        enabled = !isLoading,
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            isSearchActive = !isSearchActive
+                            if (!isSearchActive) {
+                                searchQuery = ""
+                                focusManager.clearFocus()
+                            }
                         }
-                    }) {
+                    ) {
                         Icon(
                             imageVector = if (isSearchActive) Icons.AutoMirrored.Filled.ArrowForward else Icons.Default.Search,
                             contentDescription = "Search",
@@ -542,7 +548,7 @@ fun DashboardScreen(
         },
         floatingActionButton = {
             AnimatedVisibility(
-                visible = fabExpanded,
+                visible = fabExpanded && !isLoading,
                 enter = scaleIn() + fadeIn(),
                 exit = scaleOut() + fadeOut()
             ) {
