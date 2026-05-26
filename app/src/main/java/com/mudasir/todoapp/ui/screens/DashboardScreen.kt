@@ -311,15 +311,11 @@ fun DashboardScreen(
         }
     }
 
-    // ✅ AUTO-SCROLL TO TOP ON INITIAL LOAD OR IMPORT SUCCESS/LOGIN SUCCESS
-    LaunchedEffect(groups.isNotEmpty(), importState, shouldScrollToTop, isLoading) {
-        if (groups.isNotEmpty()) {
-            if (shouldScrollToTop && !isLoading) {
-                scrollState.animateScrollToItem(0)
-                onScrollToTopHandled()
-            } else if (importState is ImportState.Success || groups.size <= 5) {
-                scrollState.animateScrollToItem(0)
-            }
+    // ✅ AUTO-SCROLL TO TOP ON IMPORT SUCCESS OR GOOGLE LOGIN SYNC COMPLETE
+    LaunchedEffect(shouldScrollToTop, isLoading, importState, groups) {
+        if (shouldScrollToTop && !isLoading && importState !is ImportState.Loading && groups.isNotEmpty()) {
+            scrollState.animateScrollToItem(0)
+            onScrollToTopHandled()
         }
     }
 

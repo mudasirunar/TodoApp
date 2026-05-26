@@ -230,15 +230,6 @@ class TodoViewModel(
             initialValue = emptyList()
         )
 
-    /**
-     * Single source of truth for the dashboard loading state.
-     * Stays true until we are CERTAIN the UI has the final data:
-     * - DB hasn't loaded at all yet → loading
-     * - Sync is in progress → loading
-     * - Sync finished AND it had data, but groups is still empty (Room hasn't caught up) → loading
-     * - Sync finished AND it had NO data (empty account), groups empty → NOT loading (show empty state)
-     * - Sync finished AND groups is non-empty → NOT loading (show projects)
-     */
     val isLoading: StateFlow<Boolean> = combine(
         syncManager.isSyncing,
         _isDbLoaded,
@@ -538,68 +529,76 @@ class TodoViewModel(
     }
     fun resetApp(onComplete: () -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
-            val userId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
-            if (userId != null) {
-                try {
-                    val firestore = com.google.firebase.firestore.FirebaseFirestore.getInstance()
-                    val batch = firestore.batch()
+            try {
+                // 1. Stop realtime sync first to prevent incoming snapshot updates from recreating data
+                syncManager.stopRealtimeSync()
 
-                    val groups = todoDao.getAllGroups().first()
+                val userId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+                if (userId != null) {
+                    try {
+                        val firestore = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                        val batch = firestore.batch()
 
-                    groups.forEach { relation ->
-                        val groupRef = firestore.collection("users").document(userId)
-                            .collection("groups").document(relation.group.id)
-                        batch.set(
-                            groupRef,
-                            mapOf("deleted" to true, "updatedAt" to System.currentTimeMillis()),
-                            com.google.firebase.firestore.SetOptions.merge()
-                        )
+                        val groups = todoDao.getAllGroupsDirect()
 
-                        relation.tasks.forEach { task ->
-                            val taskRef = firestore.collection("users").document(userId)
-                                .collection("groups").document(relation.group.id)
-                                .collection("tasks").document(task.id)
+                        groups.forEach { group ->
+                            val groupRef = firestore.collection("users").document(userId)
+                                .collection("groups").document(group.id)
                             batch.set(
-                                taskRef,
+                                groupRef,
                                 mapOf("deleted" to true, "updatedAt" to System.currentTimeMillis()),
                                 com.google.firebase.firestore.SetOptions.merge()
                             )
+
+                            val tasks = todoDao.getTasksByGroupId(group.id)
+                            tasks.forEach { task ->
+                                val taskRef = firestore.collection("users").document(userId)
+                                    .collection("groups").document(group.id)
+                                    .collection("tasks").document(task.id)
+                                batch.set(
+                                    taskRef,
+                                    mapOf("deleted" to true, "updatedAt" to System.currentTimeMillis()),
+                                    com.google.firebase.firestore.SetOptions.merge()
+                                )
+                            }
                         }
+
+                        val settingsRef = firestore.collection("users").document(userId)
+                            .collection("settings").document("profile")
+                        val defaultSettingsMap = mapOf(
+                            "themeMode" to ThemeMode.SYSTEM.name,
+                            "aiRewriteType" to RewriteType.Standard.name,
+                            "pdfIncludeStatus" to true,
+                            "pdfIncludeFavorites" to true,
+                            "pdfIncludeSummary" to true,
+                            "moveDoneToBottom" to false,
+                            "updatedAt" to System.currentTimeMillis(),
+                            "deviceId" to ""
+                        )
+                        batch.set(settingsRef, defaultSettingsMap)
+
+                        batch.commit()
+                    } catch (e: Exception) {
+                        e.printStackTrace()
                     }
-
-                    val settingsRef = firestore.collection("users").document(userId)
-                        .collection("settings").document("profile")
-                    val defaultSettingsMap = mapOf(
-                        "themeMode" to ThemeMode.SYSTEM.name,
-                        "aiRewriteType" to RewriteType.Standard.name,
-                        "pdfIncludeStatus" to true,
-                        "pdfIncludeFavorites" to true,
-                        "pdfIncludeSummary" to true,
-                        "moveDoneToBottom" to false,
-                        "updatedAt" to System.currentTimeMillis(),
-                        "deviceId" to ""
-                    )
-                    batch.set(settingsRef, defaultSettingsMap)
-
-                    batch.commit().await()
-                } catch (e: Exception) {
-                    e.printStackTrace()
                 }
-            }
 
-            // Clear Database
-            todoDao.deleteAllGroups()
-            todoDao.deleteAllTasks()
-            
-            // Reset Sync State in SyncManager
-            syncManager.resetSyncState()
-            
-            // Clear Preferences
-            preferenceManager.clearAll()
-            
-            // Post completion back to main thread
-            kotlinx.coroutines.withContext(Dispatchers.Main) {
-                onComplete()
+                // 2. Clear Database
+                todoDao.deleteAllGroups()
+                todoDao.deleteAllTasks()
+                
+                // 3. Reset Sync State in SyncManager
+                syncManager.resetSyncState()
+                
+                // 4. Clear Preferences
+                preferenceManager.clearAll()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                // 5. Post completion back to main thread in finally block so it's guaranteed to run!
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    onComplete()
+                }
             }
         }
     }

@@ -19,6 +19,9 @@ interface TodoDao {
     @Query("SELECT * FROM todo_tasks WHERE groupId = :groupId")
     suspend fun getTasksByGroupId(groupId: String): List<TodoTaskEntity>
 
+    @Query("SELECT * FROM todo_groups")
+    suspend fun getAllGroupsDirect(): List<TodoGroupEntity>
+
     @Upsert
     suspend fun insertGroup(group: TodoGroupEntity)
 
