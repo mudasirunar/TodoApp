@@ -59,9 +59,11 @@ class PreferenceManager private constructor(context: Context) {
         val SETTINGS_SYNC_STATE_KEY = stringPreferencesKey("settings_sync_state")
 
         val HAS_MIGRATED_TO_CLOUD_KEY = booleanPreferencesKey("has_migrated_to_cloud")
+        val IS_OFFLINE_GUEST_KEY = booleanPreferencesKey("is_offline_guest")
     }
 
     val hasMigratedToCloud: Flow<Boolean> = appContext.dataStore.data.map { it[HAS_MIGRATED_TO_CLOUD_KEY] ?: false }
+    val isOfflineGuest: Flow<Boolean> = appContext.dataStore.data.map { it[IS_OFFLINE_GUEST_KEY] ?: false }
 
     val settingsUpdatedAt: Flow<Long> = appContext.dataStore.data.map { it[SETTINGS_UPDATED_AT_KEY] ?: 0L }
     val settingsSyncState: Flow<String> = appContext.dataStore.data.map { it[SETTINGS_SYNC_STATE_KEY] ?: "SYNCED" }
@@ -202,6 +204,12 @@ class PreferenceManager private constructor(context: Context) {
 
             preferences[SETTINGS_UPDATED_AT_KEY] = updatedAt
             preferences[SETTINGS_SYNC_STATE_KEY] = SyncState.SYNCED.name
+        }
+    }
+
+    suspend fun setOfflineGuest(value: Boolean) {
+        appContext.dataStore.edit { preferences ->
+            preferences[IS_OFFLINE_GUEST_KEY] = value
         }
     }
 

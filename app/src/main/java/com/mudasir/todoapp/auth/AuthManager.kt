@@ -12,12 +12,17 @@ import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.GoogleAuthProvider
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import java.io.IOException
 import java.security.MessageDigest
 import java.util.UUID
 
@@ -36,6 +41,8 @@ class AuthManager(
     private val auth = FirebaseAuth.getInstance()
     private val credentialManager = CredentialManager.create(applicationContext)
 
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+
     private val _authState = MutableStateFlow(AuthState.LOADING)
     val authState: StateFlow<AuthState> = _authState.asStateFlow()
 
@@ -43,21 +50,30 @@ class AuthManager(
     val currentUserFlow: StateFlow<com.google.firebase.auth.FirebaseUser?> = _currentUser.asStateFlow()
 
     init {
-        // Initialize immediately
-        updateAuthState(auth.currentUser)
-        
+        scope.launch {
+            combine(
+                preferenceManager.isOfflineGuest,
+                _currentUser
+            ) { isOfflineGuest, user ->
+                when {
+                    user != null -> {
+                        if (user.isAnonymous) AuthState.GUEST else AuthState.AUTHENTICATED
+                    }
+                    isOfflineGuest -> AuthState.GUEST
+                    else -> AuthState.UNAUTHENTICATED
+                }
+            }.collect { state ->
+                _authState.value = state
+            }
+        }
+
         auth.addAuthStateListener { firebaseAuth ->
-            updateAuthState(firebaseAuth.currentUser)
+            _currentUser.value = firebaseAuth.currentUser
         }
     }
 
-    private fun updateAuthState(user: com.google.firebase.auth.FirebaseUser?) {
-        _authState.value = when {
-            user == null -> AuthState.UNAUTHENTICATED
-            user.isAnonymous -> AuthState.GUEST
-            else -> AuthState.AUTHENTICATED
-        }
-        _currentUser.value = user
+    suspend fun setOfflineGuest(value: Boolean) {
+        preferenceManager.setOfflineGuest(value)
     }
 
     val currentUser get() = auth.currentUser
@@ -75,6 +91,9 @@ class AuthManager(
     }
 
     suspend fun signInWithGoogle(activityContext: Context): Result<Unit> = withContext(Dispatchers.IO) {
+        if (!com.mudasir.todoapp.utils.NetworkUtils.isNetworkAvailable(applicationContext)) {
+            return@withContext Result.failure(IOException("No internet connection. Please check your network and try again."))
+        }
         try {
             // 1. Generate Nonce
             val rawNonce = UUID.randomUUID().toString()

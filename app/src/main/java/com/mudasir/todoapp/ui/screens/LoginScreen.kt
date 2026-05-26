@@ -146,6 +146,18 @@ fun LoginScreen(
                     onClick = {
                         scope.launch {
                             isLoading = true
+                            
+                            // Check network availability before proceeding
+                            if (!com.mudasir.todoapp.utils.NetworkUtils.isNetworkAvailable(context)) {
+                                isLoading = false
+                                Toast.makeText(
+                                    context,
+                                    "No internet connection. Please check your network and try again.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                                return@launch
+                            }
+                            
                             val result = authManager.signInWithGoogle(context)
                             if (result.isSuccess) {
                                 AnalyticsManager.logGoogleLogin(true)
@@ -154,9 +166,20 @@ fun LoginScreen(
                             } else {
                                 AnalyticsManager.logGoogleLogin(false)
                                 isLoading = false
+                                val exception = result.exceptionOrNull()
+                                val errorMessage = when {
+                                    exception?.javaClass?.simpleName == "GetCredentialCancellationException" ||
+                                    exception?.message?.contains("cancel", ignoreCase = true) == true ||
+                                    exception?.message?.contains("canceled", ignoreCase = true) == true -> {
+                                        "Sign in cancelled"
+                                    }
+                                    else -> {
+                                        "Google Sign-In failed: ${exception?.localizedMessage ?: "Unknown error"}"
+                                    }
+                                }
                                 Toast.makeText(
                                     context,
-                                    "Sign in failed: ${result.exceptionOrNull()?.message}",
+                                    errorMessage,
                                     Toast.LENGTH_LONG
                                 ).show()
                             }
@@ -190,16 +213,32 @@ fun LoginScreen(
                     onClick = {
                         scope.launch {
                             isLoading = true
-                            val result = authManager.signInAnonymously()
-                            isLoading = false
+                            
+                            // Enforce loading spinner visual presence for at least 500ms
+                            val minDelayJob = launch { kotlinx.coroutines.delay(500L) }
+                            
+                            val isOnline = com.mudasir.todoapp.utils.NetworkUtils.isNetworkAvailable(context)
+                            val result = if (isOnline) {
+                                authManager.signInAnonymously()
+                            } else {
+                                Result.success(Unit) // Bypass offline
+                            }
+                            
+                            minDelayJob.join()
+                            
                             if (result.isSuccess) {
+                                if (!isOnline) {
+                                    authManager.setOfflineGuest(true)
+                                } else {
+                                    authManager.setOfflineGuest(false)
+                                }
+                                isLoading = false
                                 onLoginSuccess()
                             } else {
-                                Toast.makeText(
-                                    context,
-                                    "Guest login failed: ${result.exceptionOrNull()?.message}",
-                                    Toast.LENGTH_LONG
-                                ).show()
+                                // If Firebase sign-in failed even though we had internet, fallback to offline guest anyway
+                                authManager.setOfflineGuest(true)
+                                isLoading = false
+                                onLoginSuccess()
                             }
                         }
                     },

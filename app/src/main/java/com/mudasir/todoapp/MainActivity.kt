@@ -57,6 +57,7 @@ class MainActivity : AppCompatActivity() {
         val preferenceManager = PreferenceManager.getInstance(this)
         
         val initialThemeMode = runBlocking { preferenceManager.themeMode.first() }
+        val initialIsOfflineGuest = runBlocking { preferenceManager.isOfflineGuest.first() }
         val isSystemDark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         val isInitiallyDark = when (initialThemeMode) {
             ThemeMode.LIGHT -> false
@@ -85,6 +86,7 @@ class MainActivity : AppCompatActivity() {
             )
 
             val themeMode by viewModel.themeMode.collectAsStateWithLifecycle(initialValue = initialThemeMode)
+            val isOfflineGuest by preferenceManager.isOfflineGuest.collectAsState(initial = initialIsOfflineGuest)
 
             // AUTH-BASED SYNC INITIALIZATION
             val authState by authManager.authState.collectAsState()
@@ -92,6 +94,17 @@ class MainActivity : AppCompatActivity() {
             LaunchedEffect(authState) {
                 if (authState == com.mudasir.todoapp.auth.AuthState.AUTHENTICATED ||
                     authState == com.mudasir.todoapp.auth.AuthState.GUEST) {
+
+                    // Silent Auth Upgrade: if in GUEST authState but Firebase user is null, we are an offline guest.
+                    // If internet is available, silently upgrade them to Firebase Anonymous User so syncing starts!
+                    if (authState == com.mudasir.todoapp.auth.AuthState.GUEST && authManager.currentUser == null) {
+                        if (com.mudasir.todoapp.utils.NetworkUtils.isNetworkAvailable(this@MainActivity)) {
+                            val result = authManager.signInAnonymously()
+                            if (result.isSuccess) {
+                                authManager.setOfflineGuest(false)
+                            }
+                        }
+                    }
 
                     val hasMigrated = preferenceManager.hasMigratedToCloud.first()
                     if (!hasMigrated) {
@@ -127,7 +140,7 @@ class MainActivity : AppCompatActivity() {
                 ) {
                     val navController = rememberNavController()
 
-                    val startDestination = if (authManager.currentUser == null) "login" else "dashboard"
+                    val startDestination = if (authManager.currentUser == null && !isOfflineGuest) "login" else "dashboard"
 
                     NavHost(
                         navController,
