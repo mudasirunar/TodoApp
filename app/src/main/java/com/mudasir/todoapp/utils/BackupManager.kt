@@ -102,67 +102,62 @@ class BackupManager(
 
                 backupData.groups.forEach { importedGroup ->
                     val existingLocalGroup = currentLocalGroups.find { it.group.id == importedGroup.id }
-                        ?: currentLocalGroups.find { it.group.title == importedGroup.title }
 
                     val now = System.currentTimeMillis()
                     val deviceId = preferenceManager.getOrCreateDeviceId()
 
                     if (existingLocalGroup != null) {
-                        val initialLocalTasks = existingLocalGroup.tasks.map { taskEntity ->
-                            com.mudasir.todoapp.data.TodoTask(
-                                id = taskEntity.id,
-                                text = taskEntity.text,
-                                status = taskEntity.status,
-                                isFavorite = taskEntity.isFavorite,
-                                position = taskEntity.position,
-                                createdAt = taskEntity.createdAt
-                            )
-                        }
-                        val localTasksToSave = initialLocalTasks.toMutableList()
+                        val localTasksMap = existingLocalGroup.tasks.associateBy { it.id }.toMutableMap()
 
                         importedGroup.tasks.forEach { importedTask ->
-                            val isDuplicate = initialLocalTasks.any { localTask ->
-                                localTask.id == importedTask.id || (
-                                    localTask.text == importedTask.text &&
-                                    localTask.status == importedTask.status &&
-                                    localTask.isFavorite == importedTask.isFavorite
-                                )
-                            }
+                            val existingLocalTask = localTasksMap[importedTask.id]
 
-                            if (isDuplicate) {
-                                duplicatesIgnored++
-                            } else {
-                                localTasksToSave.add(importedTask)
+                            if (existingLocalTask == null) {
+                                val newTask = com.mudasir.todoapp.data.TodoTaskEntity(
+                                    id = importedTask.id,
+                                    groupId = existingLocalGroup.group.id,
+                                    text = importedTask.text,
+                                    status = importedTask.status,
+                                    isFavorite = importedTask.isFavorite,
+                                    position = importedTask.position,
+                                    createdAt = importedTask.createdAt,
+                                    updatedAt = now,
+                                    deleted = false,
+                                    syncState = SyncState.PENDING,
+                                    deviceId = deviceId
+                                )
+                                localTasksMap[importedTask.id] = newTask
                                 tasksImported++
+                            } else {
+                                if (existingLocalTask.deleted) {
+                                    val updatedTask = existingLocalTask.copy(
+                                        text = importedTask.text,
+                                        status = importedTask.status,
+                                        isFavorite = importedTask.isFavorite,
+                                        position = importedTask.position,
+                                        updatedAt = now,
+                                        deleted = false,
+                                        syncState = SyncState.PENDING,
+                                        deviceId = deviceId
+                                    )
+                                    localTasksMap[importedTask.id] = updatedTask
+                                    tasksImported++
+                                } else {
+                                    duplicatesIgnored++
+                                }
                             }
                         }
 
-                        val groupEntity = TodoGroupEntity(
-                            id = existingLocalGroup.group.id,
-                            title = existingLocalGroup.group.title,
-                            createdAt = existingLocalGroup.group.createdAt,
+                        val groupEntity = existingLocalGroup.group.copy(
+                            title = importedGroup.title,
                             isPinned = existingLocalGroup.group.isPinned || importedGroup.isPinned,
                             updatedAt = now,
-                            deviceId = deviceId,
-                            syncState = SyncState.PENDING
+                            deleted = false,
+                            syncState = SyncState.PENDING,
+                            deviceId = deviceId
                         )
 
-                        val taskEntities = localTasksToSave.map { task ->
-                            com.mudasir.todoapp.data.TodoTaskEntity(
-                                id = task.id,
-                                groupId = groupEntity.id,
-                                text = task.text,
-                                status = task.status,
-                                isFavorite = task.isFavorite,
-                                position = task.position,
-                                createdAt = task.createdAt,
-                                updatedAt = now,
-                                deviceId = deviceId,
-                                syncState = SyncState.PENDING
-                            )
-                        }
-
-                        todoDao.insertGroupWithTasks(groupEntity, taskEntities)
+                        todoDao.insertGroupWithTasks(groupEntity, localTasksMap.values.toList())
 
                     } else {
                         val groupEntity = TodoGroupEntity(
@@ -171,8 +166,9 @@ class BackupManager(
                             createdAt = importedGroup.createdAt,
                             isPinned = importedGroup.isPinned,
                             updatedAt = now,
-                            deviceId = deviceId,
-                            syncState = SyncState.PENDING
+                            deleted = false,
+                            syncState = SyncState.PENDING,
+                            deviceId = deviceId
                         )
 
                         val taskEntities = importedGroup.tasks.map { task ->
@@ -185,8 +181,9 @@ class BackupManager(
                                 position = task.position,
                                 createdAt = task.createdAt,
                                 updatedAt = now,
-                                deviceId = deviceId,
-                                syncState = SyncState.PENDING
+                                deleted = false,
+                                syncState = SyncState.PENDING,
+                                deviceId = deviceId
                             )
                         }
 

@@ -120,6 +120,8 @@ fun DashboardScreen(
     groups: List<TodoGroup>,
     importState: ImportState = ImportState.Idle,
     isLoading: Boolean = false,
+    shouldScrollToTop: Boolean = false,
+    onScrollToTopHandled: () -> Unit = {},
     onResetImportState: () -> Unit = {},
     softDeleteGroupId: String? = null,
     onSoftDeleteHandled: () -> Unit = {},
@@ -309,10 +311,15 @@ fun DashboardScreen(
         }
     }
 
-    // ✅ AUTO-SCROLL TO TOP ON INITIAL LOAD OR IMPORT SUCCESS
-    LaunchedEffect(groups.isNotEmpty(), importState) {
-        if (groups.isNotEmpty() && (importState is ImportState.Success || groups.size <= 5)) {
-            scrollState.animateScrollToItem(0)
+    // ✅ AUTO-SCROLL TO TOP ON INITIAL LOAD OR IMPORT SUCCESS/LOGIN SUCCESS
+    LaunchedEffect(groups.isNotEmpty(), importState, shouldScrollToTop, isLoading) {
+        if (groups.isNotEmpty()) {
+            if (shouldScrollToTop && !isLoading) {
+                scrollState.animateScrollToItem(0)
+                onScrollToTopHandled()
+            } else if (importState is ImportState.Success || groups.size <= 5) {
+                scrollState.animateScrollToItem(0)
+            }
         }
     }
 
@@ -600,7 +607,7 @@ fun DashboardScreen(
                     )
                 }
             }
-        } else if (groups.isEmpty()) {
+        } else if (visibleGroups.isEmpty()) {
             Column(
                 modifier = Modifier.fillMaxSize().padding(padding),
                 horizontalAlignment = Alignment.CenterHorizontally,

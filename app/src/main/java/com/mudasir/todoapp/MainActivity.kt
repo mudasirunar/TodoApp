@@ -158,6 +158,7 @@ class MainActivity : AppCompatActivity() {
                                 authManager = authManager,
                                 syncManager = syncManager,
                                 onLoginSuccess = {
+                                    viewModel.triggerScrollToTop()
                                     navController.navigate("dashboard") {
                                         popUpTo("login") { inclusive = true }
                                     }
@@ -169,6 +170,7 @@ class MainActivity : AppCompatActivity() {
                             val groups by viewModel.activeGroups.collectAsStateWithLifecycle()
                             val importState by viewModel.importState.collectAsStateWithLifecycle()
                             val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
+                            val shouldScrollToTop by viewModel.shouldScrollToTop.collectAsStateWithLifecycle()
                             val softDeleteGroupId by backStackEntry.savedStateHandle.getStateFlow<String?>(
                                 "soft_delete_group_id",
                                 null
@@ -178,6 +180,8 @@ class MainActivity : AppCompatActivity() {
                                 groups = groups,
                                 importState = importState,
                                 isLoading = isLoading,
+                                shouldScrollToTop = shouldScrollToTop,
+                                onScrollToTopHandled = { viewModel.clearScrollToTop() },
                                 onResetImportState = { viewModel.resetImportState() },
                                 softDeleteGroupId = softDeleteGroupId,
                                 onSoftDeleteHandled = {
@@ -222,6 +226,7 @@ class MainActivity : AppCompatActivity() {
                                 syncManager = syncManager,
                                 onBack = { navController.popBackStack() },
                                 onNavigateToDashboard = {
+                                    viewModel.triggerScrollToTop()
                                     navController.navigate("dashboard") {
                                         popUpTo(0) { inclusive = true }
                                     }

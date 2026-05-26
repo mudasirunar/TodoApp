@@ -217,7 +217,13 @@ class SyncManager(
 
                             val localGroup = todoDao.getGroupById(id)
                             val localUpdatedAt = localGroup?.updatedAt ?: 0L
+                            val isLocalDeleted = localGroup?.deleted ?: false
                             val isRemoteDeleted = doc.getBoolean("deleted") ?: false
+
+                            // If locally deleted and remote is trying to make active, delete wins unless remote is strictly newer (deliberate reactivation)
+                            if (isLocalDeleted && !isRemoteDeleted && remoteUpdatedAt <= localUpdatedAt) {
+                                continue
+                            }
 
                             if (isRemoteDeleted || remoteUpdatedAt > localUpdatedAt) {
                                 val groupEntity = TodoGroupEntity(
@@ -289,7 +295,13 @@ class SyncManager(
                             val taskId = doc.getString("id") ?: doc.id
                             val localTask = todoDao.getTaskById(taskId)
                             val localUpdatedAt = localTask?.updatedAt ?: 0L
+                            val isLocalDeleted = localTask?.deleted ?: false
                             val isRemoteDeleted = doc.getBoolean("deleted") ?: false
+
+                            // If locally deleted and remote is active, delete wins unless remote is strictly newer
+                            if (isLocalDeleted && !isRemoteDeleted && remoteUpdatedAt <= localUpdatedAt) {
+                                continue
+                            }
 
                             if (isRemoteDeleted || remoteUpdatedAt > localUpdatedAt) {
                                 val statusStr = doc.getString("status") ?: TodoStatus.ComingUp.name
@@ -375,6 +387,7 @@ class SyncManager(
                 "createdAt" to it.createdAt,
                 "isPinned" to it.isPinned,
                 "updatedAt" to it.updatedAt,
+                "deleted" to it.deleted,
                 "deviceId" to it.deviceId
             )
             batch.set(groupRef, groupMap, SetOptions.merge())
@@ -393,6 +406,7 @@ class SyncManager(
                 "position" to task.position,
                 "createdAt" to task.createdAt,
                 "updatedAt" to task.updatedAt,
+                "deleted" to task.deleted,
                 "deviceId" to task.deviceId
             )
             batch.set(taskRef, taskMap, SetOptions.merge())
@@ -479,5 +493,13 @@ class SyncManager(
         }
 
         notifyLocalChange()
+    }
+
+    fun resetSyncState() {
+        _isSyncing.value = false
+        _initialSettingsReceived.value = true
+        initialGroupsLoaded = true
+        pendingTaskInitialLoads.set(0)
+        _initialSyncHadData.value = false
     }
 }

@@ -86,11 +86,9 @@ class SyncWorker(
                     "isPinned" to group.isPinned,
                     "updatedAt" to group.updatedAt,
                     "deviceId" to group.deviceId,
+                    "deleted" to group.deleted,
                     "syncState" to group.syncState.name
                 )
-                if (group.deleted) {
-                    groupMap["deleted"] = true
-                }
 
                 batch.set(groupRef, groupMap, SetOptions.merge())
                 successfullySyncedGroupIds.add(group.id)
@@ -124,11 +122,9 @@ class SyncWorker(
                     "createdAt" to task.createdAt,
                     "updatedAt" to task.updatedAt,
                     "deviceId" to task.deviceId,
+                    "deleted" to task.deleted,
                     "syncState" to task.syncState.name
                 )
-                if (task.deleted) {
-                    taskMap["deleted"] = true
-                }
 
                 batch.set(taskRef, taskMap, SetOptions.merge())
                 successfullySyncedTaskIds.add(task.id)

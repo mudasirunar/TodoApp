@@ -35,6 +35,7 @@ import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.io.InputStream
 import java.io.OutputStream
+import kotlinx.coroutines.tasks.await
 
 class RowHistory(initialText: String) {
     private val maxHistory = 30
@@ -96,6 +97,17 @@ class TodoViewModel(
     private val _importState = MutableStateFlow<com.mudasir.todoapp.utils.ImportState>(com.mudasir.todoapp.utils.ImportState.Idle)
     val importState: StateFlow<com.mudasir.todoapp.utils.ImportState> = _importState.asStateFlow()
 
+    private val _shouldScrollToTop = MutableStateFlow(false)
+    val shouldScrollToTop = _shouldScrollToTop.asStateFlow()
+
+    fun triggerScrollToTop() {
+        _shouldScrollToTop.value = true
+    }
+
+    fun clearScrollToTop() {
+        _shouldScrollToTop.value = false
+    }
+
     fun resetImportState() {
         _importState.value = com.mudasir.todoapp.utils.ImportState.Idle
     }
@@ -155,6 +167,10 @@ class TodoViewModel(
             _importState.value = com.mudasir.todoapp.utils.ImportState.Loading
             val result = backupManager.importDatabase(inputStream)
             _importState.value = result
+            if (result is com.mudasir.todoapp.utils.ImportState.Success) {
+                syncManager.notifyLocalChange()
+                triggerScrollToTop()
+            }
         }
     }
 
@@ -225,14 +241,11 @@ class TodoViewModel(
      */
     val isLoading: StateFlow<Boolean> = combine(
         syncManager.isSyncing,
-        syncManager.initialSyncHadData,
-        _isDbLoaded,
-        activeGroups
-    ) { syncing, syncHadData, dbLoaded, groups ->
+        _isDbLoaded
+    ) { syncing, dbLoaded ->
         when {
             !dbLoaded -> true                       // DB hasn't emitted anything yet
             syncing -> true                         // Still syncing from Firebase
-            syncHadData && groups.isEmpty() -> true  // Sync wrote data but Room hasn't caught up yet
             else -> false                           // Ready: either has data or account is truly empty
         }
     }.stateIn(
@@ -522,9 +535,61 @@ class TodoViewModel(
     }
     fun resetApp(onComplete: () -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
+            val userId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+            if (userId != null) {
+                try {
+                    val firestore = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                    val batch = firestore.batch()
+
+                    val groups = todoDao.getAllGroups().first()
+
+                    groups.forEach { relation ->
+                        val groupRef = firestore.collection("users").document(userId)
+                            .collection("groups").document(relation.group.id)
+                        batch.set(
+                            groupRef,
+                            mapOf("deleted" to true, "updatedAt" to System.currentTimeMillis()),
+                            com.google.firebase.firestore.SetOptions.merge()
+                        )
+
+                        relation.tasks.forEach { task ->
+                            val taskRef = firestore.collection("users").document(userId)
+                                .collection("groups").document(relation.group.id)
+                                .collection("tasks").document(task.id)
+                            batch.set(
+                                taskRef,
+                                mapOf("deleted" to true, "updatedAt" to System.currentTimeMillis()),
+                                com.google.firebase.firestore.SetOptions.merge()
+                            )
+                        }
+                    }
+
+                    val settingsRef = firestore.collection("users").document(userId)
+                        .collection("settings").document("profile")
+                    val defaultSettingsMap = mapOf(
+                        "themeMode" to ThemeMode.SYSTEM.name,
+                        "aiRewriteType" to RewriteType.Standard.name,
+                        "pdfIncludeStatus" to true,
+                        "pdfIncludeFavorites" to true,
+                        "pdfIncludeSummary" to true,
+                        "moveDoneToBottom" to false,
+                        "updatedAt" to System.currentTimeMillis(),
+                        "deviceId" to ""
+                    )
+                    batch.set(settingsRef, defaultSettingsMap)
+
+                    batch.commit().await()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
             // Clear Database
             todoDao.deleteAllGroups()
             todoDao.deleteAllTasks()
+            
+            // Reset Sync State in SyncManager
+            syncManager.resetSyncState()
             
             // Clear Preferences
             preferenceManager.clearAll()
