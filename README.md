@@ -5,6 +5,8 @@ TodoApp is a modern, feature-rich task management application designed to boost 
 
 ## ✨ Features
 * **Cloud Sync & Authentication:** Seamlessly syncs your tasks and collections across multiple devices in real-time using Firebase. Includes offline support, robust conflict resolution, and seamless account linking via Google Sign-In.
+* **Diagnostics & Stability Monitoring:** Integrates **Firebase Crashlytics** to monitor application health and capture real-time crash reports and non-fatal exceptions, ensuring a highly stable and crash-free user experience.
+* **Usage & Engagement Analytics:** Uses **Firebase Analytics** to capture anonymized diagnostic insights on user flows (such as backup actions, settings changes, and Google Login success rates) to guide future UX enhancements.
 * **Voice-to-Text Entry:** Integrated speech recognition allows you to quickly add or append text to tasks hands-free using your device's microphone.
 * **AI-Powered Task Rewriting:** Utilizes the Groq API (running the `llama-3.3-70b-versatile` model) to instantly rewrite task descriptions. Users can choose between Standard, Professional, and Casual styles to match the context of their work.
 * **Dynamic Search with Highlights:** Instantly filter collections and tasks from the dashboard. The application dynamically highlights matching search queries directly within the text for rapid navigation and context discovery.
@@ -20,7 +22,7 @@ TodoApp is a modern, feature-rich task management application designed to boost 
 * **UI Toolkit:** Jetpack Compose
 * **Architecture:** MVVM (Model-View-ViewModel)
 * **Local Database:** Room Database
-* **Cloud & Auth:** Firebase Firestore, Firebase Authentication, Android Credential Manager
+* **Cloud & Diagnostics:** Firebase Firestore, Firebase Authentication, Firebase Crashlytics, Firebase Analytics, Android Credential Manager
 * **Background Processing:** WorkManager (for robust offline data syncing)
 * **Networking:** Retrofit (for Groq API integration)
 * **Concurrency:** Kotlin Coroutines & Flow
