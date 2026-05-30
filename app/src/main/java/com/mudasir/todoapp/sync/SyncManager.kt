@@ -96,7 +96,7 @@ class SyncManager(
 
         WorkManager.getInstance(context).enqueueUniqueWork(
             "BatchSyncWorker",
-            ExistingWorkPolicy.REPLACE, // If already running/queued, replace it
+            ExistingWorkPolicy.REPLACE,
             syncRequest
         )
     }
@@ -220,18 +220,24 @@ class SyncManager(
                             val isLocalDeleted = localGroup?.deleted ?: false
                             val isRemoteDeleted = doc.getBoolean("deleted") ?: false
 
+                            // If there is a pending local modification, do NOT let incoming server snapshots overwrite it!
+                            // The pending change represents local user intent that must be pushed upstream first.
+                            if (localGroup?.syncState == SyncState.PENDING) {
+                                continue
+                            }
+
                             // If locally deleted and remote is trying to make active, delete wins unless remote is strictly newer (deliberate reactivation)
                             if (isLocalDeleted && !isRemoteDeleted && remoteUpdatedAt <= localUpdatedAt) {
                                 continue
                             }
 
-                            if (remoteUpdatedAt > localUpdatedAt) {
+                            if (isRemoteDeleted || remoteUpdatedAt > localUpdatedAt) {
                                 val groupEntity = TodoGroupEntity(
                                     id = id,
                                     title = doc.getString("title") ?: "",
                                     createdAt = doc.getLong("createdAt") ?: 0L,
                                     isPinned = doc.getBoolean("isPinned") ?: doc.getBoolean("pinned") ?: false,
-                                    updatedAt = remoteUpdatedAt,
+                                    updatedAt = if (isRemoteDeleted) maxOf(remoteUpdatedAt, localUpdatedAt + 1) else remoteUpdatedAt,
                                     deleted = isRemoteDeleted,
                                     syncState = SyncState.SYNCED,
                                     deviceId = deviceId
@@ -298,12 +304,18 @@ class SyncManager(
                             val isLocalDeleted = localTask?.deleted ?: false
                             val isRemoteDeleted = doc.getBoolean("deleted") ?: false
 
+                            // If there is a pending local modification, do NOT let incoming server snapshots overwrite it!
+                            // The pending change represents local user intent that must be pushed upstream first.
+                            if (localTask?.syncState == SyncState.PENDING) {
+                                continue
+                            }
+
                             // If locally deleted and remote is active, delete wins unless remote is strictly newer
                             if (isLocalDeleted && !isRemoteDeleted && remoteUpdatedAt <= localUpdatedAt) {
                                 continue
                             }
 
-                            if (remoteUpdatedAt > localUpdatedAt) {
+                            if (isRemoteDeleted || remoteUpdatedAt > localUpdatedAt) {
                                 val statusStr = doc.getString("status") ?: TodoStatus.ComingUp.name
                                 val status = try { TodoStatus.valueOf(statusStr) } catch(e:Exception) { TodoStatus.ComingUp }
 
@@ -315,7 +327,7 @@ class SyncManager(
                                     isFavorite = doc.getBoolean("isFavorite") ?: doc.getBoolean("favorite") ?: false,
                                     position = doc.getDouble("position") ?: 0.0,
                                     createdAt = doc.getLong("createdAt") ?: 0L,
-                                    updatedAt = remoteUpdatedAt,
+                                    updatedAt = if (isRemoteDeleted) maxOf(remoteUpdatedAt, localUpdatedAt + 1) else remoteUpdatedAt,
                                     deleted = isRemoteDeleted,
                                     syncState = SyncState.SYNCED,
                                     deviceId = doc.getString("deviceId") ?: ""

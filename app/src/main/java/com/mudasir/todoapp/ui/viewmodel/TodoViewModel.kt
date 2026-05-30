@@ -230,16 +230,26 @@ class TodoViewModel(
             initialValue = emptyList()
         )
 
+    private var initialSyncCaughtUp = false
+
     val isLoading: StateFlow<Boolean> = combine(
         syncManager.isSyncing,
         _isDbLoaded,
         syncManager.initialSyncHadData,
         activeGroups
     ) { syncing, dbLoaded, initialSyncHadData, groups ->
+        if (syncing) {
+            initialSyncCaughtUp = false
+        }
+        val isFirstLoadFinished = dbLoaded && !syncing && (!initialSyncHadData || groups.isNotEmpty())
+        if (isFirstLoadFinished) {
+            initialSyncCaughtUp = true
+        }
+
         when {
             !dbLoaded -> true                       // DB hasn't emitted anything yet
             syncing -> true                         // Still syncing from Firebase
-            initialSyncHadData && groups.isEmpty() -> true // Sync got data, but Room hasn't caught up yet
+            !initialSyncCaughtUp && initialSyncHadData && groups.isEmpty() -> true // Sync got data, but Room hasn't caught up yet
             else -> false                           // Ready: either has data or account is truly empty
         }
     }.stateIn(
@@ -528,11 +538,9 @@ class TodoViewModel(
         }
     }
     fun resetApp(onComplete: () -> Unit) {
+        initialSyncCaughtUp = false
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // 1. Stop realtime sync first to prevent incoming snapshot updates from recreating data
-                syncManager.stopRealtimeSync()
-
                 val userId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
                 if (userId != null) {
                     try {
