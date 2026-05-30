@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "620396810758-qrlq8hrrqh4gus9drum0qs5f84r4jifv.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.mudasir.todoapp",
+            "certificate_hash": "7377971e8a0572d465cbf905846eda652505f4c0"
+          }
+        },
+        {
           "client_id": "620396810758-eqhkc6cqsvv55ch5chusq1oa9tk0ha4g.apps.googleusercontent.com",
           "client_type": 3
         }
