@@ -1241,6 +1241,16 @@ fun AccountSection(
 
 @Composable
 fun AppBrandingFooter() {
+    val context = LocalContext.current
+    val versionName = remember {
+        try {
+            val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+            packageInfo.versionName ?: "2.2"
+        } catch (e: Exception) {
+            "2.2"
+        }
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth(),
@@ -1277,7 +1287,7 @@ fun AppBrandingFooter() {
             )
 
             Text(
-                text = "Version 2.1",
+                text = "Version $versionName",
                 style = MaterialTheme.typography.labelSmall,
                 color = Color.Gray,
                 lineHeight = 8.sp
