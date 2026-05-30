@@ -1,5 +1,7 @@
 package com.mudasir.todoapp.utils
 
+import androidx.annotation.Keep
+import com.google.gson.annotations.SerializedName
 import com.mudasir.todoapp.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -21,22 +23,33 @@ enum class RewriteMode {
 }
 
 // Data classes for Groq API
+@Keep
 data class GroqRequest(
+    @SerializedName("model")
     val model: String = "llama-3.3-70b-versatile",
+    @SerializedName("messages")
     val messages: List<GroqMessage>,
+    @SerializedName("temperature")
     val temperature: Double = 0.7
 )
 
+@Keep
 data class GroqMessage(
+    @SerializedName("role")
     val role: String,
+    @SerializedName("content")
     val content: String
 )
 
+@Keep
 data class GroqResponse(
+    @SerializedName("choices")
     val choices: List<GroqChoice>
 )
 
+@Keep
 data class GroqChoice(
+    @SerializedName("message")
     val message: GroqMessage
 )
 
