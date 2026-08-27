@@ -212,8 +212,8 @@ fun AddTodoScreen(
     }
 
     LaunchedEffect(existingGroup) {
-        // 1. Merge Title
-        if (!isTitleFocused && title != existingGroup.title) {
+        // 1. Merge Title: Only update from existingGroup if remote title is not blank or local title is blank
+        if (!isTitleFocused && existingGroup.title.isNotBlank() && title != existingGroup.title) {
             title = existingGroup.title
         }
 
