@@ -21,7 +21,7 @@ android {
         localProps.load(localFile.inputStream())
     }
 
-    val apiKey = localProps.getProperty("GROQ_API_KEY", "")
+    val apiKey = localProps.getProperty("GROQ_API_KEY") ?: System.getenv("GROQ_API_KEY") ?: ""
 
     defaultConfig {
         applicationId = "com.mudasir.todoapp"
