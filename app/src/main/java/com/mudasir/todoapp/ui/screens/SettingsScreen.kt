@@ -63,6 +63,8 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.layout.ContentScale
 import com.mudasir.todoapp.utils.PdfConfig
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -1257,25 +1259,13 @@ fun AppBrandingFooter() {
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .size(32.dp)
-                .clip(CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            Image(
-                painter = painterResource(id = R.drawable.ic_launcher_background),
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize()
-            )
-            Image(
-                painter = painterResource(id = R.drawable.ic_launcher_foreground),
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize()
-            )
-        }
+        Image(
+            painter = painterResource(id = R.drawable.app_branding_logo),
+            contentDescription = "App Logo",
+            modifier = Modifier.size(48.dp)
+        )
 
-        Spacer(modifier = Modifier.width(12.dp))
+        Spacer(modifier = Modifier.width(4.dp))
 
         Column {
             Text(

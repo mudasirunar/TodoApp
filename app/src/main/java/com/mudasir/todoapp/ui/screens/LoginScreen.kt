@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mudasir.todoapp.R
@@ -70,42 +71,13 @@ fun LoginScreen(
         ) {
 
             // ── App Icon ──────────────────────────────────────────
-            Box(
+            Image(
+                painter = painterResource(id = R.drawable.app_branding_logo),
+                contentDescription = "App Icon",
                 modifier = Modifier
                     .scale(iconScale)
-                    .size(96.dp)
-                    .clip(CircleShape)
-                    .background(
-                        Brush.radialGradient(
-                            colors = listOf(
-                                primary.copy(alpha = 0.18f),
-                                primary.copy(alpha = 0.06f)
-                            )
-                        )
-                    )
-                    .border(
-                        width = 1.5.dp,
-                        brush = Brush.linearGradient(
-                            colors = listOf(
-                                primary.copy(alpha = 0.5f),
-                                primary.copy(alpha = 0.15f)
-                            )
-                        ),
-                        shape = CircleShape
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Image(
-                    painter = painterResource(id = R.drawable.ic_launcher_background),
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize()
-                )
-                Image(
-                    painter = painterResource(id = R.drawable.ic_launcher_foreground),
-                    contentDescription = "App Icon",
-                    modifier = Modifier.size(120.dp)
-                )
-            }
+                    .size(180.dp)
+            )
 
             Spacer(modifier = Modifier.height(28.dp))
 
