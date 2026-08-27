@@ -1,23 +1,64 @@
-*.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-/.idea/appInsightsSettings.xml
-.idea/.name
-.DS_Store
+# Built application files
+*.apk
+*.aar
+*.ap_
+*.aab
+*.dex
+
+# Output files
 /build
-/captures
-.externalNativeBuild
-.cxx
+**/build/
+bin/
+out/
+
+# Local configuration & Secrets
 local.properties
+*.env
+.env.*
+secrets.properties
+*.keystore
+*.jks
+*.pepk
+*.p12
+*.key
+*.pem
+
+# Gradle files
+.gradle/
+build/
+
+# Kotlin Compiler & Logs
+.kotlin/
 *.log
+*.log.*
+hs_err_pid*.log
 error-*.log
-/app/release/app-release.apk
-/app/release/baselineProfiles/0/app-release.dm
-/app/release/baselineProfiles/1/app-release.dm
-/app/release/output-metadata.json
+
+# Android Studio & IntelliJ IDEA
+*.iml
+*.ipr
+*.iws
+.idea/
+!.idea/codeStyles/
+!.idea/copyright/
+
+# Native builds
+.externalNativeBuild/
+.cxx/
+captures/
+
+# Release outputs
+/release
+**/release/
+/app/release/
+output-metadata.json
+baselineProfiles/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
